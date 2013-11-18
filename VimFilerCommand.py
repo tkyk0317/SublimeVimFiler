@@ -3,6 +3,7 @@ import sublime
 import sublime_plugin
 import os
 import os.path
+import shutil
 
 
 # set utf-8 encoding(for japanese language).
@@ -72,6 +73,14 @@ class FileSystemManager:
     def is_file(path):
         return os.path.isfile(path)
 
+    @staticmethod
+    def is_exist(path):
+        return os.path.exists(path)
+
+    @staticmethod
+    def is_link(path):
+        return os.path.islink(path)
+
 
 class WriteResult:
 
@@ -86,6 +95,12 @@ class WriteResult:
 
         # cursor move to BOF.
         view.run_command("move_to", {"to": "bof"})
+
+    @staticmethod
+    def update_result(view, edit):
+        cur_dir = FileSystemManager.get_cur_dir()
+        dir_list = FileSystemManager.get_current_dir_list(cur_dir)
+        WriteResult.write(view, edit, dir_list)
 
 
 class VimFilerCommand(sublime_plugin.TextCommand):
@@ -225,8 +240,56 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
             sublime.status_message(self.COMP_MSG)
 
             # update page.
-            cur_dir = FileSystemManager.get_cur_dir()
-            dir_list = FileSystemManager.get_current_dir_list(cur_dir)
-            WriteResult.write(self.view, self.edit, dir_list)
+            WriteResult.update_result(self.view, self.edit)
         except:
             sublime.message_dialog(self.ERR_MSG)
+
+
+class VimFilerDeleteCommand(sublime_plugin.TextCommand):
+
+    CAPTION = u'Delete File/Directory'
+    COMP_MSG = u'Delete Complete'
+
+    def run(self, edit):
+        self.edit = edit
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        path = ViewManager(self.view).get_abs_path(row)
+
+        # show output panel.
+        self.show_rename_panel(path)
+
+    def show_rename_panel(self, path):
+        sublime.status_message("test")
+        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
+                                            None, None)
+
+    def on_done(self, delete_path):
+        # check exist.
+        if False == FileSystemManager.is_exist(delete_path):
+            return
+
+        # delete.
+        if True == self.delete(delete_path):
+            # update.
+            sublime.status_message(self.COMP_MSG)
+            WriteResult.update_result(self.view, self.edit)
+
+    def delete(self, path):
+        is_return = False
+
+        # check directory or file.
+        if True == FileSystemManager.is_dir(path) and \
+           False == FileSystemManager.is_link(path):
+            # check empty.
+            dir_list = FileSystemManager.get_current_dir_list(path)
+            if 0 == len(dir_list):
+                os.rmdir(path)
+            else:
+                sublime.status_message("DELETE")
+                shutil.rmtree(path, True)
+            is_return = True
+        else:
+            os.remove(path)
+            is_return = True
+
+        return is_return
