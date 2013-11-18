@@ -81,6 +81,10 @@ class FileSystemManager:
     def is_link(path):
         return os.path.islink(path)
 
+    @staticmethod
+    def get_dir_name(path):
+        return os.path.dirname(path)
+
 
 class WriteResult:
 
@@ -293,3 +297,37 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
             is_return = True
 
         return is_return
+
+
+class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
+
+    CAPTION = u'Create File'
+    COMP_MSG = u'Create File Complete'
+    ERR_MSG = u'Created File is Already Exist'
+
+    def run(self, edit):
+        # get current directory.
+        self.edit = edit
+        path = FileSystemManager.get_cur_dir() + DELIMITER_DIR
+
+        # show output panel.
+        self.show_rename_panel(path)
+
+    def show_rename_panel(self, path):
+        sublime.status_message("test")
+        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
+                                            None, None)
+
+    def on_done(self, create_file):
+        # check exist file.
+        if True == FileSystemManager.is_exist(create_file):
+            sublime.message_dialog(self.ERR_MSG)
+            return
+
+        # create file.
+        open(create_file, "w").close()
+
+        # update and open file.
+        WriteResult.update_result(self.view, self.edit)
+        self.view.window().open_file(create_file)
+        sublime.status_message(self.COMP_MSG)
