@@ -85,6 +85,10 @@ class FileSystemManager:
     def get_dir_name(path):
         return os.path.dirname(path)
 
+    @staticmethod
+    def create_dir(path):
+        return os.mkdir(path)
+
 
 class WriteResult:
 
@@ -253,6 +257,7 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
 
     CAPTION = u'Delete File/Directory'
     COMP_MSG = u'Delete Complete'
+    ERR_MSG = u'Not Exist Deleted Path'
 
     def run(self, edit):
         self.edit = edit
@@ -270,6 +275,7 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
     def on_done(self, delete_path):
         # check exist.
         if False == FileSystemManager.is_exist(delete_path):
+            sublime.message_dialog(self.ERR_MSG)
             return
 
         # delete.
@@ -303,7 +309,7 @@ class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
 
     CAPTION = u'Create File'
     COMP_MSG = u'Create File Complete'
-    ERR_MSG = u'Created File is Already Exist'
+    ERR_MSG = u'Create File Error(Same File or Not Exist Path)'
 
     def run(self, edit):
         # get current directory.
@@ -314,7 +320,6 @@ class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
         self.show_rename_panel(path)
 
     def show_rename_panel(self, path):
-        sublime.status_message("test")
         self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
                                             None, None)
 
@@ -331,3 +336,33 @@ class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
         WriteResult.update_result(self.view, self.edit)
         self.view.window().open_file(create_file)
         sublime.status_message(self.COMP_MSG)
+
+
+class VimFilerCreateDirCommand(sublime_plugin.TextCommand):
+
+    CAPTION = u'Create Directory'
+    COMP_MSG = u'Create Directory Complete'
+    ERR_MSG = u'Create Directory Error(Same Directory or Not Exist Path)'
+
+    def run(self, edit):
+        # get current directory.
+        self.edit = edit
+        path = FileSystemManager.get_cur_dir() + DELIMITER_DIR
+
+        # show output panel.
+        self.show_rename_panel(path)
+
+    def show_rename_panel(self, path):
+        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
+                                            None, None)
+
+    def on_done(self, create_dir):
+        # create directory.
+        try:
+            FileSystemManager.create_dir(create_dir)
+
+            # update and open file.
+            WriteResult.update_result(self.view, self.edit)
+            sublime.status_message(self.COMP_MSG)
+        except:
+            sublime.message_dialog(self.ERR_MSG)
