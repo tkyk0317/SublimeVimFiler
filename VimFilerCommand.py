@@ -366,3 +366,46 @@ class VimFilerCreateDirCommand(sublime_plugin.TextCommand):
             sublime.status_message(self.COMP_MSG)
         except:
             sublime.message_dialog(self.ERR_MSG)
+
+
+class VimFilerMoveCommand(sublime_plugin.TextCommand):
+
+    CAPTION = u'Move File/Directory'
+    COMP_MSG = u'Move File/Directory Complete'
+    ERR_MSG = u'Move File/Directory Error(Not Exist Path)'
+    ARROW = u' ->'
+    ARROW_SUFFIX = u'>'
+
+    def run(self, edit):
+        # get specified file/directory.
+        self.edit = edit
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        self.src_path = ViewManager(self.view).get_abs_path(row)
+
+        # create move message.
+        msg = self.create_move_message(self.src_path)
+
+        # show output panel.
+        self.show_rename_panel(msg)
+
+    def create_move_message(self, src_path):
+        return src_path + self.ARROW + src_path
+
+    def show_rename_panel(self, path):
+        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
+                                            None, None)
+
+    def on_done(self, move_msg):
+        # check ARROW string.
+        if False == (self.ARROW in move_msg):
+            return
+
+        # split dst_path
+        dst_path = move_msg.split(self.ARROW_SUFFIX)[1]
+        sublime.status_message(dst_path)
+        # move.
+        shutil.move(self.src_path, dst_path)
+
+        # update.
+        WriteResult.update_result(self.view, self.edit)
+        sublime.status_message(self.COMP_MSG)
