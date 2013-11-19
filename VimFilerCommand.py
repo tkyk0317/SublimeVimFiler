@@ -509,3 +509,10 @@ class VimFilerAppearOrHideDotfilesCommand(sublime_plugin.TextCommand):
         if True == cur_status:
             change_status = False
         return change_status
+
+
+class VimFilerRefreshCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # update.
+        WriteResult.update_result(self.view, edit)
