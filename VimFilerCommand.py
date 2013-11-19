@@ -134,6 +134,10 @@ class FileSystemManager:
     def create_dir(path):
         return os.mkdir(path)
 
+    @staticmethod
+    def get_expand_user_path(path):
+        return os.path.expanduser(path)
+
 
 class WriteResult:
 
@@ -548,7 +552,7 @@ class VimFilerAddBookmarkCommand(sublime_plugin.TextCommand):
         file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
 
         # open file.
-        f = open(os.path.expanduser(file_name), "a+")
+        f = open(FileSystemManager.get_expand_user_path(file_name), "a+")
 
         # check same bookmark.
         lines = f.readlines()
