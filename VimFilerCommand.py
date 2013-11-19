@@ -116,10 +116,6 @@ class VimFilerCommand(sublime_plugin.TextCommand):
     cur_dir_list = []
     cur_path = ""
 
-    def __init__(self, view):
-        super(VimFilerCommand, self).__init__(view)
-        self.window = self.view.window()
-
     def run(self, edit):
         # get current dir list.
         self.cur_path = self.get_current_dir()
@@ -141,7 +137,7 @@ class VimFilerCommand(sublime_plugin.TextCommand):
         WriteResult.write(output_file, edit, dir_list)
 
     def get_output_file(self):
-        output_file = self.window.new_file()
+        output_file = self.view.window().new_file()
         output_file.set_syntax_file(SYNTAX_FILE)
         output_file.set_name(BUFFER_NAME)
         output_file.set_scratch(True)
