@@ -16,7 +16,7 @@ DOT = "."
 ENTER_CHAR = "\n"
 ROOT_DIR = "/"
 PREV_DIR = ".."
-HOME_DIR = "HOME"
+HOME_ENV = "HOME"
 DELIMITER_DIR = "/"
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
@@ -29,14 +29,14 @@ class SettingManager:
     HIDE_DOTFILES_KEY = "hide_dotfiles"
 
     @staticmethod
-    def get(key):
-        return SettingManager.option.get(key, "")
-
-    @staticmethod
     def init():
         SettingManager.settings = sublime.load_settings(SETTINGS_FILE)
         SettingManager.option[SettingManager.HIDE_DOTFILES_KEY] = \
             SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, "")
+
+    @staticmethod
+    def get(key):
+        return SettingManager.option.get(key, "")
 
     @staticmethod
     def set(key, value):
@@ -87,6 +87,7 @@ class FileSystemManager:
         # hide dotfiles.
         hide_list = []
         for name in list_dir:
+            # check beginning dot.
             if False == name.startswith(DOT):
                 hide_list.append(name)
         return hide_list
@@ -98,6 +99,7 @@ class FileSystemManager:
         # add "/" delimiter.
         for dir_name in dir_list:
             tmp_path = FileSystemManager.get_abs_path(dir_name)
+            # if direcotry, add "/".
             if FileSystemManager.is_dir(tmp_path):
                 dir_name = dir_name + DELIMITER_DIR
             add_dir_list.append(dir_name)
@@ -137,7 +139,11 @@ class WriteResult:
 
         # show result.
         for path in dir_list:
-            view.insert(edit, view.size(), (path + ENTER_CHAR))
+            # check end element.
+            if len(dir_list) - 1 != dir_list.index(path):
+                view.insert(edit, view.size(), (path + ENTER_CHAR))
+            else:
+                view.insert(edit, view.size(), (path))
 
         # cursor move to BOF.
         view.run_command("move_to", {"to": "bof"})
@@ -242,7 +248,7 @@ class VimFilerOpenHomeDirCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         # get home dir.
-        home_dir = os.environ[HOME_DIR]
+        home_dir = os.environ[HOME_ENV]
         FileSystemManager.set_cur_dir(home_dir)
         dir_list = FileSystemManager.get_current_dir_list(home_dir)
         WriteResult.write(self.view, edit, dir_list)
@@ -268,10 +274,21 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+
+        # check prev dir.
+        if True == self.is_prevdir(row):
+            return
 
         # show output panel.
+        self.src_path = ViewManager(self.view).get_abs_path(row)
         self.show_rename_panel(self.src_path)
+
+    def is_prevdir(self, index):
+        cur_path = ViewManager(self.view).get_line(index)
+
+        if cur_path.rstrip(ENTER_CHAR) == (PREV_DIR + DELIMITER_DIR):
+            return True
+        return False
 
     def show_rename_panel(self, path):
         window = self.view.window()
@@ -298,10 +315,21 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        path = ViewManager(self.view).get_abs_path(row)
+
+        # check prev dir.
+        if True == self.is_prevdir(row):
+            return
 
         # show output panel.
+        path = ViewManager(self.view).get_abs_path(row)
         self.show_rename_panel(path)
+
+    def is_prevdir(self, index):
+        cur_path = ViewManager(self.view).get_line(index)
+
+        if cur_path.rstrip(ENTER_CHAR) == (PREV_DIR + DELIMITER_DIR):
+            return True
+        return False
 
     def show_rename_panel(self, path):
         window = self.view.window()
@@ -405,11 +433,12 @@ class VimFilerCreateDirCommand(sublime_plugin.TextCommand):
 
 class VimFilerMoveCommand(sublime_plugin.TextCommand):
 
+    ARROW = u' ->'
+    ARROW_SUFFIX = u'>'
     CAPTION = u'Move File/Directory'
     COMP_MSG = u'Move File/Directory Complete'
     ERR_MSG = u'Move File/Directory Error(Not Exist Path)'
-    ARROW = u' ->'
-    ARROW_SUFFIX = u'>'
+    ERR_MOVE_MSG = u'Not Exist Src File or Dst is not Directory'
 
     def run(self, edit):
         # get specified file/directory.
@@ -437,13 +466,26 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
 
         # split dst_path
         dst_path = move_msg.split(self.ARROW_SUFFIX)[1]
-        sublime.status_message(dst_path)
+
+        # check src_path and dst_path.
+        if False == self.check_path(self.src_path, dst_path):
+            sublime.message_dialog(self.ERR_MOVE_MSG)
+            return
+
         # move.
         shutil.move(self.src_path, dst_path)
 
         # update.
         WriteResult.update_result(self.view, self.edit)
         sublime.status_message(self.COMP_MSG)
+
+    def check_path(self, src_path, dst_path):
+        # check src_path is exist.
+        if False == FileSystemManager.is_exist(src_path):
+            return False
+        # check dst_path is directory.
+        if False == FileSystemManager.is_dir(dst_path):
+            return False
 
 
 class VimFilerAppearOrHideDotfilesCommand(sublime_plugin.TextCommand):
