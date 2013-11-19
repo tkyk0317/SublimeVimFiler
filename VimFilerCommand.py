@@ -27,12 +27,17 @@ class SettingManager:
 
     option = {}
     HIDE_DOTFILES_KEY = "hide_dotfiles"
+    BOOKMARK_FILE = "bookmark_file"
 
     @staticmethod
     def init():
         SettingManager.settings = sublime.load_settings(SETTINGS_FILE)
+
+        # load value.
         SettingManager.option[SettingManager.HIDE_DOTFILES_KEY] = \
             SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, "")
+        SettingManager.option[SettingManager.BOOKMARK_FILE] = \
+            SettingManager.settings.get(SettingManager.BOOKMARK_FILE, "")
 
     @staticmethod
     def get(key):
@@ -128,6 +133,10 @@ class FileSystemManager:
     @staticmethod
     def create_dir(path):
         return os.mkdir(path)
+
+    @staticmethod
+    def get_expand_user_path(path):
+        return os.path.expanduser(path)
 
 
 class WriteResult:
@@ -516,3 +525,48 @@ class VimFilerRefreshCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         # update.
         WriteResult.update_result(self.view, edit)
+
+
+class VimFilerAddBookmarkCommand(sublime_plugin.TextCommand):
+
+    COMP_MSG = u'Complete Regist Bookmark: '
+    ERR_MSG = u'Exist Same Bookmark: '
+    ERR_OPEN_MSG = u'Not Exist Bookmark File: '
+
+    def run(self, edit):
+        # regist bookmark.
+        cur_dir = FileSystemManager.get_cur_dir()
+        try:
+            if True == self.regist(cur_dir):
+                sublime.status_message(self.COMP_MSG + cur_dir)
+            else:
+                sublime.message_dialog(self.ERR_MSG + cur_dir)
+        except:
+            file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
+            sublime.message_dialog(self.ERR_OPEN_MSG + file_name)
+
+    def regist(self, bookmark):
+        is_regist = False
+
+        # get bookmark file.
+        file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
+
+        # open file.
+        f = open(FileSystemManager.get_expand_user_path(file_name), "a+")
+
+        # check same bookmark.
+        lines = f.readlines()
+        if False == self.check_same_bookmark(lines, bookmark + ENTER_CHAR):
+            # write bookmark at end of file.
+            is_regist = True
+            f.seek(0, 2)
+            f.write(bookmark + ENTER_CHAR)
+        # close file.
+        f.close()
+
+        return is_regist
+
+    def check_same_bookmark(self, bookmark_list, bookmark):
+        if True == (bookmark in bookmark_list):
+            return True
+        return False
