@@ -570,3 +570,44 @@ class VimFilerAddBookmarkCommand(sublime_plugin.TextCommand):
         if True == (bookmark in bookmark_list):
             return True
         return False
+
+
+class VimFilerOpenBookmarkCommand(sublime_plugin.TextCommand):
+
+    INVALID_INDEX = -1
+
+    def run(self, edit):
+        self.edit = edit
+
+        # get bookmark.
+        bookmark_list = self.get_bookmark_list()
+
+        # show quick panel.
+        self.show_quick_panel(bookmark_list)
+
+    def get_bookmark_list(self):
+        file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
+        f = open(FileSystemManager.get_expand_user_path(file_name), "r")
+        bookmark_list = f.readlines()
+        f.close()
+        return bookmark_list
+
+    def show_quick_panel(self, bookmark_list):
+        window = self.view.window()
+        window.show_quick_panel(bookmark_list, self.on_done)
+
+    def on_done(self, index):
+        # quick pane is canceled.
+        if self.INVALID_INDEX == index:
+            return
+
+        # get specified index.
+        bookmark_list = self.get_bookmark_list()
+        bookmark = bookmark_list[index].rstrip(ENTER_CHAR)
+
+        # update current directory.
+        FileSystemManager.set_cur_dir(bookmark)
+
+        # open bookmark directory.
+        dir_list = FileSystemManager.get_current_dir_list(bookmark)
+        WriteResult.write(self.view, self.edit, dir_list)
