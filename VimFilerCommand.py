@@ -12,6 +12,7 @@ reload(sys)
 sys.setdefaultencoding('utf-8')
 
 # global variables.
+DOT = "."
 ENTER_CHAR = "\n"
 ROOT_DIR = "/"
 PREV_DIR = ".."
@@ -19,6 +20,27 @@ HOME_DIR = "HOME"
 DELIMITER_DIR = "/"
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
+SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
+
+
+class SettingManager:
+
+    option = {}
+    HIDE_DOTFILES_KEY = "hide_dotfiles"
+
+    @staticmethod
+    def get(key):
+        return SettingManager.option.get(key, "")
+
+    @staticmethod
+    def init():
+        SettingManager.settings = sublime.load_settings(SETTINGS_FILE)
+        SettingManager.option[SettingManager.HIDE_DOTFILES_KEY] = \
+            SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, "")
+
+    @staticmethod
+    def set(key, value):
+        SettingManager.option[key] = value
 
 
 class FileSystemManager:
@@ -44,6 +66,9 @@ class FileSystemManager:
         list_dir = os.listdir(dir_path)
         list_dir.sort()
 
+        # hide dotfiles.
+        list_dir = FileSystemManager.hide_dotfiles(list_dir)
+
         # if not root dir, insert prev directory.
         if ROOT_DIR != dir_path:
             list_dir.insert(0, PREV_DIR)
@@ -52,6 +77,19 @@ class FileSystemManager:
         list_dir = FileSystemManager.add_dir_delimiter(list_dir)
 
         return list_dir
+
+    @staticmethod
+    def hide_dotfiles(list_dir):
+        # check hide_dotfiles settings.
+        if True != SettingManager.get(SettingManager.HIDE_DOTFILES_KEY):
+            return list_dir
+
+        # hide dotfiles.
+        hide_list = []
+        for name in list_dir:
+            if False == name.startswith(DOT):
+                hide_list.append(name)
+        return hide_list
 
     @staticmethod
     def add_dir_delimiter(dir_list):
@@ -117,6 +155,9 @@ class VimFilerCommand(sublime_plugin.TextCommand):
     cur_path = ""
 
     def run(self, edit):
+        # load settings file.
+        SettingManager.init()
+
         # get current dir list.
         self.cur_path = self.get_current_dir()
 
@@ -233,9 +274,8 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
         self.show_rename_panel(self.src_path)
 
     def show_rename_panel(self, path):
-        sublime.status_message("test")
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, dst_path):
         try:
@@ -264,9 +304,8 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
         self.show_rename_panel(path)
 
     def show_rename_panel(self, path):
-        sublime.status_message("test")
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, delete_path):
         # check exist.
@@ -316,8 +355,8 @@ class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
         self.show_rename_panel(path)
 
     def show_rename_panel(self, path):
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, create_file):
         # check exist file.
@@ -388,8 +427,8 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
         return src_path + self.ARROW + src_path
 
     def show_rename_panel(self, path):
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, move_msg):
         # check ARROW string.
@@ -405,3 +444,26 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
         # update.
         WriteResult.update_result(self.view, self.edit)
         sublime.status_message(self.COMP_MSG)
+
+
+class VimFilerAppearOrHideDotfilesCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # get change status.
+        change_status = self.get_change_status()
+
+        # change settings.
+        SettingManager.set(SettingManager.HIDE_DOTFILES_KEY, change_status)
+
+        # update.
+        WriteResult.update_result(self.view, edit)
+
+    def get_change_status(self):
+        # get current status.
+        cur_status = SettingManager.get(SettingManager.HIDE_DOTFILES_KEY)
+        change_status = True
+
+        # change status.
+        if True == cur_status:
+            change_status = False
+        return change_status
