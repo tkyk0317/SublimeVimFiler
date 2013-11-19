@@ -4,7 +4,8 @@ import sublime_plugin
 import os
 import os.path
 import shutil
-
+import datetime
+import unicodedata
 
 # set utf-8 encoding(for japanese language).
 import sys
@@ -12,13 +13,62 @@ reload(sys)
 sys.setdefaultencoding('utf-8')
 
 # global variables.
+UTF8 = "utf-8"
+DOT = "."
+SPACE_CHAR = " "
 ENTER_CHAR = "\n"
 ROOT_DIR = "/"
 PREV_DIR = ".."
-HOME_DIR = "HOME"
+HOME_ENV = "HOME"
 DELIMITER_DIR = "/"
+UPDATE_TIME_DELIMITER = ","
+UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
+UPDATE_TIME_LEN = 17
+MARGIN = 2
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
+SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
+
+
+class SettingManager:
+
+    option = {}
+    HIDE_DOTFILES_KEY = "hide_dotfiles"
+    BOOKMARK_FILE = "bookmark_file"
+
+    @staticmethod
+    def init():
+        SettingManager.settings = sublime.load_settings(SETTINGS_FILE)
+
+        # load value.
+        SettingManager.option[SettingManager.HIDE_DOTFILES_KEY] = \
+            SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, "")
+        SettingManager.option[SettingManager.BOOKMARK_FILE] = \
+            SettingManager.settings.get(SettingManager.BOOKMARK_FILE, "")
+
+    @staticmethod
+    def get(key):
+        return SettingManager.option.get(key, "")
+
+    @staticmethod
+    def set(key, value):
+        SettingManager.option[key] = value
+
+
+class Utility:
+
+    WFA = u'WFA'
+
+    @staticmethod
+    def string_width(string):
+        width = 0
+        for c in string:
+            char_width = unicodedata.east_asian_width(c)
+            if char_width in Utility.WFA:
+                width = width + 2
+            else:
+                width = width + 1
+        return width
 
 
 class FileSystemManager:
@@ -44,6 +94,9 @@ class FileSystemManager:
         list_dir = os.listdir(dir_path)
         list_dir.sort()
 
+        # hide dotfiles.
+        list_dir = FileSystemManager.hide_dotfiles(list_dir)
+
         # if not root dir, insert prev directory.
         if ROOT_DIR != dir_path:
             list_dir.insert(0, PREV_DIR)
@@ -51,7 +104,23 @@ class FileSystemManager:
         # add "/" for directory.
         list_dir = FileSystemManager.add_dir_delimiter(list_dir)
 
+        # add update time.
+        list_dir = FileSystemManager.add_update_time(list_dir)
         return list_dir
+
+    @staticmethod
+    def hide_dotfiles(list_dir):
+        # check hide_dotfiles settings.
+        if True != SettingManager.get(SettingManager.HIDE_DOTFILES_KEY):
+            return list_dir
+
+        # hide dotfiles.
+        hide_list = []
+        for name in list_dir:
+            # check beginning dot.
+            if False == name.startswith(DOT):
+                hide_list.append(name)
+        return hide_list
 
     @staticmethod
     def add_dir_delimiter(dir_list):
@@ -60,10 +129,24 @@ class FileSystemManager:
         # add "/" delimiter.
         for dir_name in dir_list:
             tmp_path = FileSystemManager.get_abs_path(dir_name)
+            # if direcotry, add "/".
             if FileSystemManager.is_dir(tmp_path):
                 dir_name = dir_name + DELIMITER_DIR
             add_dir_list.append(dir_name)
         return add_dir_list
+
+    @staticmethod
+    def add_update_time(dir_list):
+        # get update time.
+        update_time_list = []
+        for path in dir_list:
+            abs_path = FileSystemManager.get_abs_path(path)
+            update_time = FileSystemManager.get_update_time(abs_path)
+
+            # add update time.
+            path = path + UPDATE_TIME_DELIMITER + update_time
+            update_time_list.append(path)
+        return update_time_list
 
     @staticmethod
     def is_dir(path):
@@ -89,20 +172,52 @@ class FileSystemManager:
     def create_dir(path):
         return os.mkdir(path)
 
+    @staticmethod
+    def get_expand_user_path(path):
+        return os.path.expanduser(path)
+
+    @staticmethod
+    def get_update_time(path):
+        stat = os.stat(path)
+        last_modified = stat.st_mtime
+        time = datetime.datetime.fromtimestamp(last_modified)
+        return time.strftime(UPDATE_TIME_FORMAT)
+
 
 class WriteResult:
 
     @staticmethod
     def write(view, edit, dir_list):
+        # get width of view.
+        width = int(view.viewport_extent()[0] / view.em_width())
+
         # delete all.
         view.erase(edit, sublime.Region(0, view.size()))
 
-        # show result.
-        for path in dir_list:
-            view.insert(edit, view.size(), (path + ENTER_CHAR))
+        # write result.
+        for element in dir_list:
+            path = element.split(UPDATE_TIME_DELIMITER)[0]
+            time = element.split(UPDATE_TIME_DELIMITER)[1]
+
+            # write path.
+            view.insert(edit, view.size(), path)
+            space_num = width - Utility.string_width(path.decode(UTF8))\
+                - UPDATE_TIME_LEN - MARGIN
+            WriteResult.insert_space(view, edit, space_num)
+
+            # check end element.
+            if len(dir_list) - 1 != dir_list.index(element):
+                view.insert(edit, view.size(), time + ENTER_CHAR)
+            else:
+                view.insert(edit, view.size(), time)
 
         # cursor move to BOF.
         view.run_command("move_to", {"to": "bof"})
+
+    @staticmethod
+    def insert_space(view, edit, space_num):
+        for x in range(space_num):
+            view.insert(edit, view.size(), SPACE_CHAR)
 
     @staticmethod
     def update_result(view, edit):
@@ -116,11 +231,10 @@ class VimFilerCommand(sublime_plugin.TextCommand):
     cur_dir_list = []
     cur_path = ""
 
-    def __init__(self, view):
-        super(VimFilerCommand, self).__init__(view)
-        self.window = self.view.window()
-
     def run(self, edit):
+        # load settings file.
+        SettingManager.init()
+
         # get current dir list.
         self.cur_path = self.get_current_dir()
 
@@ -141,7 +255,7 @@ class VimFilerCommand(sublime_plugin.TextCommand):
         WriteResult.write(output_file, edit, dir_list)
 
     def get_output_file(self):
-        output_file = self.window.new_file()
+        output_file = self.view.window().new_file()
         output_file.set_syntax_file(SYNTAX_FILE)
         output_file.set_name(BUFFER_NAME)
         output_file.set_scratch(True)
@@ -160,14 +274,17 @@ class VimFilerCommand(sublime_plugin.TextCommand):
 class ViewManager:
 
     def __init__(self, view):
+        cur_dir = FileSystemManager.get_cur_dir()
         self.view_string = \
-            view.substr(sublime.Region(0, view.size())).split("\n")
+            FileSystemManager.get_current_dir_list(cur_dir)
+            # read all view string.
+            #view.substr(sublime.Region(0, view.size())).split("\n")
 
-    def get_line(self, index):
-        return self.view_string[index]
+    def get_line_dir(self, index):
+        return self.view_string[index].split(UPDATE_TIME_DELIMITER)[0]
 
     def get_abs_path(self, index):
-        return FileSystemManager.get_abs_path(self.get_line(index))
+        return FileSystemManager.get_abs_path(self.get_line_dir(index))
 
 
 class VimFilerOpenDirCommand(sublime_plugin.TextCommand):
@@ -205,7 +322,7 @@ class VimFilerOpenHomeDirCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         # get home dir.
-        home_dir = os.environ[HOME_DIR]
+        home_dir = os.environ[HOME_ENV]
         FileSystemManager.set_cur_dir(home_dir)
         dir_list = FileSystemManager.get_current_dir_list(home_dir)
         WriteResult.write(self.view, edit, dir_list)
@@ -231,15 +348,25 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+
+        # check prev dir.
+        if True == self.is_prevdir(row):
+            return
 
         # show output panel.
+        self.src_path = ViewManager(self.view).get_abs_path(row)
         self.show_rename_panel(self.src_path)
 
+    def is_prevdir(self, index):
+        cur_path = ViewManager(self.view).get_line_dir(index)
+
+        if cur_path.rstrip(ENTER_CHAR) == (PREV_DIR + DELIMITER_DIR):
+            return True
+        return False
+
     def show_rename_panel(self, path):
-        sublime.status_message("test")
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, dst_path):
         try:
@@ -262,15 +389,25 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        path = ViewManager(self.view).get_abs_path(row)
+
+        # check prev dir.
+        if True == self.is_prevdir(row):
+            return
 
         # show output panel.
+        path = ViewManager(self.view).get_abs_path(row)
         self.show_rename_panel(path)
 
+    def is_prevdir(self, index):
+        cur_path = ViewManager(self.view).get_line_dir(index)
+
+        if cur_path.rstrip(ENTER_CHAR) == (PREV_DIR + DELIMITER_DIR):
+            return True
+        return False
+
     def show_rename_panel(self, path):
-        sublime.status_message("test")
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, delete_path):
         # check exist.
@@ -320,8 +457,8 @@ class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
         self.show_rename_panel(path)
 
     def show_rename_panel(self, path):
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, create_file):
         # check exist file.
@@ -370,11 +507,12 @@ class VimFilerCreateDirCommand(sublime_plugin.TextCommand):
 
 class VimFilerMoveCommand(sublime_plugin.TextCommand):
 
+    ARROW = u' ->'
+    ARROW_SUFFIX = u'>'
     CAPTION = u'Move File/Directory'
     COMP_MSG = u'Move File/Directory Complete'
     ERR_MSG = u'Move File/Directory Error(Not Exist Path)'
-    ARROW = u' ->'
-    ARROW_SUFFIX = u'>'
+    ERR_MOVE_MSG = u'Not Exist Src File or Dst is not Directory'
 
     def run(self, edit):
         # get specified file/directory.
@@ -392,8 +530,8 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
         return src_path + self.ARROW + src_path
 
     def show_rename_panel(self, path):
-        self.view.window().show_input_panel(self.CAPTION, path, self.on_done,
-                                            None, None)
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, move_msg):
         # check ARROW string.
@@ -402,10 +540,139 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
 
         # split dst_path
         dst_path = move_msg.split(self.ARROW_SUFFIX)[1]
-        sublime.status_message(dst_path)
+
+        # check src_path and dst_path.
+        if False == self.check_path(self.src_path, dst_path):
+            sublime.message_dialog(self.ERR_MOVE_MSG)
+            return
+
         # move.
         shutil.move(self.src_path, dst_path)
 
         # update.
         WriteResult.update_result(self.view, self.edit)
         sublime.status_message(self.COMP_MSG)
+
+    def check_path(self, src_path, dst_path):
+        # check src_path is exist.
+        if False == FileSystemManager.is_exist(src_path):
+            return False
+        # check dst_path is directory.
+        if False == FileSystemManager.is_dir(dst_path):
+            return False
+
+
+class VimFilerAppearOrHideDotfilesCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # get change status.
+        change_status = self.get_change_status()
+
+        # change settings.
+        SettingManager.set(SettingManager.HIDE_DOTFILES_KEY, change_status)
+
+        # update.
+        WriteResult.update_result(self.view, edit)
+
+    def get_change_status(self):
+        # get current status.
+        cur_status = SettingManager.get(SettingManager.HIDE_DOTFILES_KEY)
+        change_status = True
+
+        # change status.
+        if True == cur_status:
+            change_status = False
+        return change_status
+
+
+class VimFilerRefreshCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # update.
+        WriteResult.update_result(self.view, edit)
+
+
+class VimFilerAddBookmarkCommand(sublime_plugin.TextCommand):
+
+    COMP_MSG = u'Complete Regist Bookmark: '
+    ERR_MSG = u'Exist Same Bookmark: '
+    ERR_OPEN_MSG = u'Not Exist Bookmark File: '
+
+    def run(self, edit):
+        # regist bookmark.
+        cur_dir = FileSystemManager.get_cur_dir()
+        try:
+            if True == self.regist(cur_dir):
+                sublime.status_message(self.COMP_MSG + cur_dir)
+            else:
+                sublime.message_dialog(self.ERR_MSG + cur_dir)
+        except:
+            file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
+            sublime.message_dialog(self.ERR_OPEN_MSG + file_name)
+
+    def regist(self, bookmark):
+        is_regist = False
+
+        # get bookmark file.
+        file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
+
+        # open file.
+        f = open(FileSystemManager.get_expand_user_path(file_name), "a+")
+
+        # check same bookmark.
+        lines = f.readlines()
+        if False == self.check_same_bookmark(lines, bookmark + ENTER_CHAR):
+            # write bookmark at end of file.
+            is_regist = True
+            f.seek(0, 2)
+            f.write(bookmark + ENTER_CHAR)
+        # close file.
+        f.close()
+
+        return is_regist
+
+    def check_same_bookmark(self, bookmark_list, bookmark):
+        if True == (bookmark in bookmark_list):
+            return True
+        return False
+
+
+class VimFilerOpenBookmarkCommand(sublime_plugin.TextCommand):
+
+    INVALID_INDEX = -1
+
+    def run(self, edit):
+        self.edit = edit
+
+        # get bookmark.
+        bookmark_list = self.get_bookmark_list()
+
+        # show quick panel.
+        self.show_quick_panel(bookmark_list)
+
+    def get_bookmark_list(self):
+        file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
+        f = open(FileSystemManager.get_expand_user_path(file_name), "r")
+        bookmark_list = f.readlines()
+        f.close()
+        return bookmark_list
+
+    def show_quick_panel(self, bookmark_list):
+        window = self.view.window()
+        window.show_quick_panel(bookmark_list, self.on_done)
+
+    def on_done(self, index):
+        # quick pane is canceled.
+        if self.INVALID_INDEX == index:
+            return
+
+        # get specified index.
+        bookmark_list = self.get_bookmark_list()
+        bookmark = bookmark_list[index].rstrip(ENTER_CHAR)
+
+        # update current directory.
+        FileSystemManager.set_cur_dir(bookmark)
+
+        # open bookmark directory.
+        dir_list = FileSystemManager.get_current_dir_list(bookmark)
+        WriteResult.write(self.view, self.edit, dir_list)

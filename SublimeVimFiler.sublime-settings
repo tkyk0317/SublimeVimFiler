@@ -1,0 +1,6 @@
+{
+    // hide dotfiles.
+    "hide_dotfiles": true,
+    // bookmark file.
+    "bookmark_file": "~/.sublime_vimfiler_bookmark"
+}
