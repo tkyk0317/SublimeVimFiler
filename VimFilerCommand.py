@@ -42,6 +42,7 @@ class SettingManager:
     option = {}
     HIDE_DOTFILES_KEY = "hide_dotfiles"
     BOOKMARK_FILE = "bookmark_file"
+    LIMIT_LEN = "limit_length"
 
     @staticmethod
     def init():
@@ -52,6 +53,8 @@ class SettingManager:
             SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, "")
         SettingManager.option[SettingManager.BOOKMARK_FILE] = \
             SettingManager.settings.get(SettingManager.BOOKMARK_FILE, "")
+        SettingManager.option[SettingManager.LIMIT_LEN] = \
+            SettingManager.settings.get(SettingManager.LIMIT_LEN, 50)
 
     @staticmethod
     def get(key):
@@ -284,11 +287,11 @@ class WriteResult:
             per = dir_info_list[PERMISIION_INDEX]
             time = dir_info_list[UPDATE_TIME_INDEX]
 
-            sublime.status_message(owner)
             # write path.
-            WriteResult.__write_dir_name(view, edit, dir)
-            space_num = width - Utility.string_width(dir.decode(UTF8)) - \
-                len(owner) - len(per) - UPDATE_TIME_LEN - MARGIN
+            dir_len = WriteResult.__write_dir_name(view, edit, dir)
+
+            # insert space.
+            space_num = width - dir_len - len(owner) - len(per) - UPDATE_TIME_LEN - MARGIN
             WriteResult.insert_space(view, edit, space_num)
 
             # write owner and permission info.
@@ -307,7 +310,11 @@ class WriteResult:
 
     @staticmethod
     def __write_dir_name(view, edit, dir_name):
+        # check dir_name len.
+        if SettingManager.get(SettingManager.LIMIT_LEN) < Utility.string_width(dir_name.decode(UTF8)):
+            dir_name = dir_name[:SettingManager.get(SettingManager.LIMIT_LEN)]
         view.insert(edit, view.size(), dir_name)
+        return Utility.string_width(dir_name.decode(UTF8))
 
     @staticmethod
     def __write_owner(view, edit, owner):
