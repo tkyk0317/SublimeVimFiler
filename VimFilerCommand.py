@@ -682,7 +682,12 @@ class VimFilerOpenBookmarkCommand(sublime_plugin.TextCommand):
     def get_bookmark_list(self):
         file_name = SettingManager.get(SettingManager.BOOKMARK_FILE)
         f = open(FileSystemManager.get_expand_user_path(file_name), "r")
-        bookmark_list = f.readlines()
+
+        # delete empty line.
+        bookmark_list = []
+        for bookmark in f.readlines():
+            if ENTER_CHAR != bookmark:
+                bookmark_list.append(bookmark)
         f.close()
         return bookmark_list
 
@@ -699,9 +704,24 @@ class VimFilerOpenBookmarkCommand(sublime_plugin.TextCommand):
         bookmark_list = self.get_bookmark_list()
         bookmark = bookmark_list[index].rstrip(ENTER_CHAR)
 
-        # update current directory.
-        FileSystemManager.set_cur_dir(bookmark)
+        # check exist path.
+        if True == FileSystemManager.is_exist(bookmark):
+            # update current directory.
+            FileSystemManager.set_cur_dir(bookmark)
 
-        # open bookmark directory.
-        dir_list = FileSystemManager.get_current_dir_list(bookmark)
-        WriteResult.write(self.view, self.edit, dir_list)
+            # open bookmark directory.
+            dir_list = FileSystemManager.get_current_dir_list(bookmark)
+            WriteResult.write(self.view, self.edit, dir_list)
+
+
+class VimFilerEditBookmarkCommand(sublime_plugin.TextCommand):
+
+    INVALID_INDEX = -1
+
+    def run(self, edit):
+        # get bookmark file.
+        bookmark_file = SettingManager.get(SettingManager.BOOKMARK_FILE)
+        bookmark_path = FileSystemManager.get_expand_user_path(bookmark_file)
+        sublime.status_message(bookmark_path)
+        # open bookmark file.
+        self.view.window().open_file(bookmark_path)
