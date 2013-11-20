@@ -7,6 +7,7 @@ import os.path
 import shutil
 import datetime
 import unicodedata
+import pwd
 import stat
 
 # set utf-8 encoding(for japanese language).
@@ -26,13 +27,14 @@ DELIMITER_DIR = "/"
 UPDATE_TIME_DELIMITER = ","
 UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
 UPDATE_TIME_LEN = 17
-MARGIN = 4
+MARGIN = 6
 PERMISSION_SPACE = 2
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
 SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
-PERMISIION_INDEX = 0
-UPDATE_TIME_INDEX = 1
+OWNER_INDEX = 0
+PERMISIION_INDEX = 1
+UPDATE_TIME_INDEX = 2
 
 
 class SettingManager:
@@ -107,6 +109,9 @@ class Utility:
 
 class FileSystemManager:
 
+    READ_BIT = 4
+    WRITE_BIT = 2
+    EXECUTE_BIT = 1
     cur_path = ""
 
     @staticmethod
@@ -131,7 +136,8 @@ class FileSystemManager:
         # hide dotfiles.
         dir_dict = FileSystemManager.hide_dot_files(dir_dict)
 
-        # add permisiion/update time.
+        # add owner/permisiion/update time.
+        FileSystemManager.add_owner_info(dir_dict)
         FileSystemManager.add_permission_info(dir_dict)
         FileSystemManager.add_update_time(dir_dict)
         return dir_dict
@@ -156,6 +162,14 @@ class FileSystemManager:
             return dir_dict
         # hide dot files.
         return dict([(k, v) for k, v in dir_dict.items() if False == k.startswith(DOT)])
+
+    @staticmethod
+    def add_owner_info(dir_dict):
+        # add owner info.
+        for dir_name in dir_dict:
+            abs_path = FileSystemManager.get_abs_path(dir_name)
+            owner_info = FileSystemManager.get_owner(abs_path)
+            dir_dict[dir_name].append(owner_info)
 
     @staticmethod
     def add_permission_info(dir_dict):
@@ -209,8 +223,8 @@ class FileSystemManager:
 
     @staticmethod
     def get_permission(path):
-        permission = stat.S_IMODE(os.stat(path)[stat.ST_MODE])
-        return FileSystemManager.convert_permission(oct(permission))
+        per = oct(stat.S_IMODE(os.stat(path)[stat.ST_MODE]))
+        return FileSystemManager.convert_permission(per[-4:])
 
     @staticmethod
     def convert_permission(permission):
@@ -222,22 +236,26 @@ class FileSystemManager:
     def __get_permission(bit):
         convert = ""
         num = int(bit, 8)
-        if 4 & num:
+        if FileSystemManager.READ_BIT & num:
             # enable read bit.
             convert = convert + "r"
         else:
             convert = convert + "-"
-        if 2 & num:
+        if FileSystemManager.WRITE_BIT & num:
             # enable write bit.
             convert = convert + "w"
         else:
             convert = convert + "-"
-        if 1 & num:
+        if FileSystemManager.EXECUTE_BIT & num:
             # enable execute bit.
             convert = convert + "x"
         else:
             convert = convert + "-"
         return convert
+
+    @staticmethod
+    def get_owner(path):
+        return pwd.getpwuid(os.stat(path)[stat.ST_UID])[0]
 
     @staticmethod
     def sort_dir_dict(dir_dict):
@@ -262,12 +280,20 @@ class WriteResult:
         dir_list = FileSystemManager.sort_dir_dict_key(dir_dict)
         dir_end_name = dir_list[len(dir_list) - 1]
         for dir, dir_info_list in FileSystemManager.sort_dir_dict(dir_dict):
+            owner = dir_info_list[OWNER_INDEX]
             per = dir_info_list[PERMISIION_INDEX]
             time = dir_info_list[UPDATE_TIME_INDEX]
 
-            # write path/permission.
+            sublime.status_message(owner)
+            # write path.
             WriteResult.__write_dir_name(view, edit, dir)
-            WriteResult.__write_permission(view, edit, dir, per, width)
+            space_num = width - Utility.string_width(dir.decode(UTF8)) - \
+                len(owner) - len(per) - UPDATE_TIME_LEN - MARGIN
+            WriteResult.insert_space(view, edit, space_num)
+
+            # write owner and permission info.
+            WriteResult.__write_owner(view, edit, owner)
+            WriteResult.__write_permission(view, edit, per)
 
             # write update time.
             WriteResult.insert_space(view, edit, PERMISSION_SPACE)
@@ -284,10 +310,13 @@ class WriteResult:
         view.insert(edit, view.size(), dir_name)
 
     @staticmethod
-    def __write_permission(view, edit, dir_name, permission, width):
-        space_num = width - Utility.string_width(dir_name.decode(UTF8))\
-            - len(permission) - UPDATE_TIME_LEN - MARGIN
-        WriteResult.insert_space(view, edit, space_num)
+    def __write_owner(view, edit, owner):
+        WriteResult.insert_space(view, edit, 1)
+        view.insert(edit, view.size(), owner)
+
+    @staticmethod
+    def __write_permission(view, edit, permission):
+        WriteResult.insert_space(view, edit, 2)
         view.insert(edit, view.size(), permission)
 
     @staticmethod
