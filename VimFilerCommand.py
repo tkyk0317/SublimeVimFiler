@@ -74,6 +74,39 @@ class Utility:
                 width = width + 1
         return width
 
+    @staticmethod
+    def rm_dir(path):
+        for root, dirs, files in os.walk(path, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+        os.rmdir(path)
+
+    @staticmethod
+    def rcopy_file(src_path, dst_path):
+        # create root directory.
+        dst_root = src_path.rstrip(DELIMITER_DIR)
+        dst_root = dst_root.split(DELIMITER_DIR)
+        dst_root = dst_root[len(dst_root) - 1]
+        dst_root = os.path.join(dst_path, dst_root)
+
+        # check exist directory.
+        if False == FileSystemManager.is_exist(dst_root):
+            FileSystemManager.create_dir(dst_root)
+
+        # copy file.
+        for src_root, dirs, files in os.walk(src_path):
+            # create dst directory.
+            dst = os.path.join(dst_root, src_root.replace(src_path, ''))
+            if False == FileSystemManager.is_exist(dst):
+                FileSystemManager.create_dir(dst)
+            # copy file.
+            for file in files:
+                copy_src = os.path.join(src_root, file)
+                copy_dst = os.path.join(dst, file)
+                shutil.copy2(copy_src, copy_dst)
+
 
 class FileSystemManager:
 
@@ -445,30 +478,17 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
             return
 
         # delete.
-        if True == self.delete(delete_path):
-            # update.
-            sublime.status_message(self.COMP_MSG)
-            WriteResult.update_result(self.view, self.edit)
+        self.delete(delete_path)
+        sublime.status_message(self.COMP_MSG)
+        WriteResult.update_result(self.view, self.edit)
 
     def delete(self, path):
-        is_return = False
-
         # check directory or file.
         if True == FileSystemManager.is_dir(path) and \
            False == FileSystemManager.is_link(path):
-            # check empty.
-            dir_list = FileSystemManager.get_current_dir_list(path)
-            if 0 == len(dir_list):
-                os.rmdir(path)
-            else:
-                sublime.status_message("DELETE")
-                shutil.rmtree(path, True)
-            is_return = True
+            Utility.rm_dir(path)
         else:
             os.remove(path)
-            is_return = True
-
-        return is_return
 
 
 class VimFilerCreateFileCommand(sublime_plugin.TextCommand):
@@ -550,15 +570,15 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
         self.src_path = ViewManager(self.view).get_abs_path(row)
 
         # create move message.
-        msg = self.create_move_message(self.src_path)
+        msg = self.create_message(self.src_path)
 
         # show output panel.
-        self.show_rename_panel(msg)
+        self.show_panel(msg)
 
-    def create_move_message(self, src_path):
+    def create_message(self, src_path):
         return src_path + self.ARROW + src_path
 
-    def show_rename_panel(self, path):
+    def show_panel(self, path):
         window = self.view.window()
         window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
@@ -589,6 +609,7 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
         # check dst_path is directory.
         if False == FileSystemManager.is_dir(dst_path):
             return False
+        return True
 
 
 class VimFilerAppearOrHideDotfilesCommand(sublime_plugin.TextCommand):
@@ -725,3 +746,74 @@ class VimFilerEditBookmarkCommand(sublime_plugin.TextCommand):
         sublime.status_message(bookmark_path)
         # open bookmark file.
         self.view.window().open_file(bookmark_path)
+
+
+class VimFilerCopyCommand(sublime_plugin.TextCommand):
+
+    ARROW = u' ->'
+    ARROW_SUFFIX = u'>'
+    DST_SUFFIX = u'.copy'
+    CAPTION = u'Copy File/Directory'
+    COMP_MSG = u'Copy File/Directory Complete'
+    ERR_MSG = u'Copy Error(Not Exist Path)'
+
+    def run(self, edit):
+        # get specified file/directory.
+        self.edit = edit
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        self.src_path = ViewManager(self.view).get_abs_path(row)
+
+        # create copy message.
+        msg = self.create_message(self.src_path)
+
+        # show output panel.
+        self.show_panel(msg)
+
+    def create_message(self, src_path):
+        return src_path + self.ARROW + src_path
+
+    def show_panel(self, path):
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
+
+    def on_done(self, copy_msg):
+        # check ARROW string.
+        if False == (self.ARROW in copy_msg):
+            return
+
+        # check src_path and dst_path.
+        if False == FileSystemManager.is_exist(self.src_path):
+            sublime.message_dialog(self.ERR_MSG)
+            return
+
+        # split dst_path
+        dst_path = copy_msg.split(self.ARROW_SUFFIX)[1]
+        dst_path = self.get_dst_path(dst_path)
+
+        # copy.
+        try:
+            self.copy(dst_path)
+            WriteResult.update_result(self.view, self.edit)
+            #sublime.status_message(self.COMP_MSG)
+        except:
+            sublime.message_dialog(self.ERR_MSG)
+
+    def copy(self, dst_path):
+        if True == FileSystemManager.is_file(self.src_path):
+            shutil.copy2(self.src_path, dst_path)
+        elif True == FileSystemManager.is_dir(self.src_path):
+            if False == FileSystemManager.is_exist(dst_path):
+                # copy tree.
+                shutil.copytree(self.src_path, dst_path, True)
+            else:
+                Utility.rcopy_file(self.src_path, dst_path)
+
+    def get_dst_path(self, dst_path):
+        # check src_path equal dst path.
+        if self.src_path == dst_path:
+            if True == FileSystemManager.is_dir(dst_path):
+                dst_path = self.src_path.rstrip(DELIMITER_DIR)
+                dst_path = dst_path + self.DST_SUFFIX
+            else:
+                dst_path = self.src_path + self.DST_SUFFIX
+        return dst_path
