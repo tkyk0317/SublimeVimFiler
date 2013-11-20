@@ -26,7 +26,8 @@ DELIMITER_DIR = "/"
 UPDATE_TIME_DELIMITER = ","
 UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
 UPDATE_TIME_LEN = 17
-MARGIN = 2
+MARGIN = 4
+PERMISSION_SPACE = 2
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
 SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
@@ -65,22 +66,18 @@ class Utility:
 
     @staticmethod
     def string_width(string):
-        width = 0
-        for c in string:
-            char_width = unicodedata.east_asian_width(c)
-            if char_width in Utility.WFA:
-                width = width + 2
-            else:
-                width = width + 1
-        return width
+        return sum([Utility.__get_char_width(c) for c in string])
+
+    @staticmethod
+    def __get_char_width(c):
+        char_width = unicodedata.east_asian_width(c)
+        return 2 if (char_width in Utility.WFA) else 1
 
     @staticmethod
     def rm_dir(path):
         for root, dirs, files in os.walk(path, topdown=False):
-            for name in files:
-                os.remove(os.path.join(root, name))
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
+            [os.remove(os.path.join(root, name)) for name in files]
+            [os.rmdir(os.path.join(root, name)) for name in dirs]
         os.rmdir(path)
 
     @staticmethod
@@ -115,7 +112,7 @@ class FileSystemManager:
     @staticmethod
     def set_cur_dir(path):
         FileSystemManager.cur_path = os.path.abspath(path)
-        #sublime.status_message(FileSystemManager.cur_path)
+        sublime.status_message(FileSystemManager.cur_path)
 
     @staticmethod
     def get_cur_dir():
@@ -141,10 +138,7 @@ class FileSystemManager:
 
     @staticmethod
     def create_dict_list(path):
-        # get directory list.
         list_dir = dircache.listdir(path)
-
-        # convert dict.
         dir_dict = {}
         for dir_name in list_dir:
             abs_path = FileSystemManager.get_abs_path(dir_name)
@@ -160,14 +154,8 @@ class FileSystemManager:
         # check hide_dotfiles settings.
         if True != SettingManager.get(SettingManager.HIDE_DOTFILES_KEY):
             return dir_dict
-
-        # delete dotfiles.
-        hide_dot_dict = {}
-        for dir_name in dir_dict:
-            # check beginning dot.
-            if False == dir_name.startswith(DOT):
-                hide_dot_dict[dir_name] = []
-        return hide_dot_dict
+        # hide dot files.
+        return dict([(k, v) for k, v in dir_dict.items() if False == k.startswith(DOT)])
 
     @staticmethod
     def add_permission_info(dir_dict):
@@ -227,24 +215,28 @@ class FileSystemManager:
     @staticmethod
     def convert_permission(permission):
         # convert permission.
+        p = [FileSystemManager.__get_permission(bit) for bit in permission[1:]]
+        return ''.join(p)
+
+    @staticmethod
+    def __get_permission(bit):
         convert = ""
-        for oct_unit in permission[1:]:
-            num = int(oct_unit, 8)
-            if 4 & num:
-                # enable read bit.
-                convert = convert + "r"
-            else:
-                convert = convert + "-"
-            if 2 & num:
-                # enable write bit.
-                convert = convert + "w"
-            else:
-                convert = convert + "-"
-            if 1 & num:
-                # enable execute bit.
-                convert = convert + "x"
-            else:
-                convert = convert + "-"
+        num = int(bit, 8)
+        if 4 & num:
+            # enable read bit.
+            convert = convert + "r"
+        else:
+            convert = convert + "-"
+        if 2 & num:
+            # enable write bit.
+            convert = convert + "w"
+        else:
+            convert = convert + "-"
+        if 1 & num:
+            # enable execute bit.
+            convert = convert + "x"
+        else:
+            convert = convert + "-"
         return convert
 
     @staticmethod
@@ -278,7 +270,7 @@ class WriteResult:
             WriteResult.__write_permission(view, edit, dir, per, width)
 
             # write update time.
-            WriteResult.insert_space(view, edit, 1)
+            WriteResult.insert_space(view, edit, PERMISSION_SPACE)
             if dir != dir_end_name:
                 view.insert(edit, view.size(), time + ENTER_CHAR)
             else:
@@ -705,12 +697,9 @@ class VimFilerOpenBookmarkCommand(sublime_plugin.TextCommand):
         f = open(FileSystemManager.get_expand_user_path(file_name), "r")
 
         # delete empty line.
-        bookmark_list = []
-        for bookmark in f.readlines():
-            if ENTER_CHAR != bookmark:
-                bookmark_list.append(bookmark)
+        lines = f.readlines()
         f.close()
-        return bookmark_list
+        return [mark for mark in lines if ENTER_CHAR != mark]
 
     def show_quick_panel(self, bookmark_list):
         window = self.view.window()
