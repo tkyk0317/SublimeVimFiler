@@ -2,10 +2,12 @@
 import sublime
 import sublime_plugin
 import os
+import dircache
 import os.path
 import shutil
 import datetime
 import unicodedata
+import stat
 
 # set utf-8 encoding(for japanese language).
 import sys
@@ -17,8 +19,8 @@ UTF8 = "utf-8"
 DOT = "."
 SPACE_CHAR = " "
 ENTER_CHAR = "\n"
-ROOT_DIR = "/"
 PREV_DIR = ".."
+ROOT_DIR = "/"
 HOME_ENV = "HOME"
 DELIMITER_DIR = "/"
 UPDATE_TIME_DELIMITER = ","
@@ -28,6 +30,8 @@ MARGIN = 2
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
 SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
+PERMISIION_INDEX = 0
+UPDATE_TIME_INDEX = 1
 
 
 class SettingManager:
@@ -78,7 +82,7 @@ class FileSystemManager:
     @staticmethod
     def set_cur_dir(path):
         FileSystemManager.cur_path = os.path.abspath(path)
-        sublime.status_message(FileSystemManager.cur_path)
+        #sublime.status_message(FileSystemManager.cur_path)
 
     @staticmethod
     def get_cur_dir():
@@ -90,63 +94,63 @@ class FileSystemManager:
 
     @staticmethod
     def get_current_dir_list(dir_path):
+        # create directory dict.
         dir_path = os.path.abspath(dir_path)
-        list_dir = os.listdir(dir_path)
-        list_dir.sort()
+        dir_dict = FileSystemManager.create_dict_list(dir_path)
 
         # hide dotfiles.
-        list_dir = FileSystemManager.hide_dotfiles(list_dir)
+        dir_dict = FileSystemManager.hide_dot_files(dir_dict)
 
-        # if not root dir, insert prev directory.
-        if ROOT_DIR != dir_path:
-            list_dir.insert(0, PREV_DIR)
-
-        # add "/" for directory.
-        list_dir = FileSystemManager.add_dir_delimiter(list_dir)
-
-        # add update time.
-        list_dir = FileSystemManager.add_update_time(list_dir)
-        return list_dir
+        # add permisiion/update time.
+        FileSystemManager.add_permission_info(dir_dict)
+        FileSystemManager.add_update_time(dir_dict)
+        return dir_dict
 
     @staticmethod
-    def hide_dotfiles(list_dir):
+    def create_dict_list(path):
+        # get directory list.
+        list_dir = dircache.listdir(path)
+
+        # convert dict.
+        dir_dict = {}
+        for dir_name in list_dir:
+            abs_path = FileSystemManager.get_abs_path(dir_name)
+            # if directory, add "/".
+            if FileSystemManager.is_dir(abs_path):
+                dir_name = dir_name + DELIMITER_DIR
+            # first value is permission info, second is update time info.
+            dir_dict[dir_name] = []
+        return dir_dict
+
+    @staticmethod
+    def hide_dot_files(dir_dict):
         # check hide_dotfiles settings.
         if True != SettingManager.get(SettingManager.HIDE_DOTFILES_KEY):
-            return list_dir
+            return dir_dict
 
-        # hide dotfiles.
-        hide_list = []
-        for name in list_dir:
+        # delete dotfiles.
+        hide_dot_dict = {}
+        for dir_name in dir_dict:
             # check beginning dot.
-            if False == name.startswith(DOT):
-                hide_list.append(name)
-        return hide_list
+            if False == dir_name.startswith(DOT):
+                hide_dot_dict[dir_name] = []
+        return hide_dot_dict
 
     @staticmethod
-    def add_dir_delimiter(dir_list):
-        add_dir_list = []
-
-        # add "/" delimiter.
-        for dir_name in dir_list:
-            tmp_path = FileSystemManager.get_abs_path(dir_name)
-            # if direcotry, add "/".
-            if FileSystemManager.is_dir(tmp_path):
-                dir_name = dir_name + DELIMITER_DIR
-            add_dir_list.append(dir_name)
-        return add_dir_list
+    def add_permission_info(dir_dict):
+        # add permission info.
+        for dir_name in dir_dict:
+            abs_path = FileSystemManager.get_abs_path(dir_name)
+            permission_info = FileSystemManager.get_permission(abs_path)
+            dir_dict[dir_name].append(permission_info)
 
     @staticmethod
-    def add_update_time(dir_list):
+    def add_update_time(dir_dict):
         # get update time.
-        update_time_list = []
-        for path in dir_list:
-            abs_path = FileSystemManager.get_abs_path(path)
+        for dir_name in dir_dict:
+            abs_path = FileSystemManager.get_abs_path(dir_name)
             update_time = FileSystemManager.get_update_time(abs_path)
-
-            # add update time.
-            path = path + UPDATE_TIME_DELIMITER + update_time
-            update_time_list.append(path)
-        return update_time_list
+            dir_dict[dir_name].append(update_time)
 
     @staticmethod
     def is_dir(path):
@@ -178,16 +182,51 @@ class FileSystemManager:
 
     @staticmethod
     def get_update_time(path):
-        stat = os.stat(path)
-        last_modified = stat.st_mtime
+        last_modified = os.stat(path).st_mtime
         time = datetime.datetime.fromtimestamp(last_modified)
         return time.strftime(UPDATE_TIME_FORMAT)
+
+    @staticmethod
+    def get_permission(path):
+        permission = stat.S_IMODE(os.stat(path)[stat.ST_MODE])
+        return FileSystemManager.convert_permission(oct(permission))
+
+    @staticmethod
+    def convert_permission(permission):
+        # convert permission.
+        convert = ""
+        for oct_unit in permission[1:]:
+            num = int(oct_unit, 8)
+            if 4 & num:
+                # enable read bit.
+                convert = convert + "r"
+            else:
+                convert = convert + "-"
+            if 2 & num:
+                # enable write bit.
+                convert = convert + "w"
+            else:
+                convert = convert + "-"
+            if 1 & num:
+                # enable execute bit.
+                convert = convert + "x"
+            else:
+                convert = convert + "-"
+        return convert
+
+    @staticmethod
+    def sort_dir_dict(dir_dict):
+        return sorted(dir_dict.items())
+
+    @staticmethod
+    def sort_dir_dict_key(dir_dict):
+        return sorted(dir_dict.keys())
 
 
 class WriteResult:
 
     @staticmethod
-    def write(view, edit, dir_list):
+    def write(view, edit, dir_dict):
         # get width of view.
         width = int(view.viewport_extent()[0] / view.em_width())
 
@@ -195,18 +234,19 @@ class WriteResult:
         view.erase(edit, sublime.Region(0, view.size()))
 
         # write result.
-        for element in dir_list:
-            path = element.split(UPDATE_TIME_DELIMITER)[0]
-            time = element.split(UPDATE_TIME_DELIMITER)[1]
+        dir_list = FileSystemManager.sort_dir_dict_key(dir_dict)
+        dir_end_name = dir_list[len(dir_list) - 1]
+        for dir, dir_info_list in FileSystemManager.sort_dir_dict(dir_dict):
+            per = dir_info_list[PERMISIION_INDEX]
+            time = dir_info_list[UPDATE_TIME_INDEX]
 
-            # write path.
-            view.insert(edit, view.size(), path)
-            space_num = width - Utility.string_width(path.decode(UTF8))\
-                - UPDATE_TIME_LEN - MARGIN
-            WriteResult.insert_space(view, edit, space_num)
+            # write path/permission.
+            WriteResult.__write_dir_name(view, edit, dir)
+            WriteResult.__write_permission(view, edit, dir, per, width)
 
-            # check end element.
-            if len(dir_list) - 1 != dir_list.index(element):
+            # write update time.
+            WriteResult.insert_space(view, edit, 1)
+            if dir != dir_end_name:
                 view.insert(edit, view.size(), time + ENTER_CHAR)
             else:
                 view.insert(edit, view.size(), time)
@@ -215,9 +255,20 @@ class WriteResult:
         view.run_command("move_to", {"to": "bof"})
 
     @staticmethod
+    def __write_dir_name(view, edit, dir_name):
+        view.insert(edit, view.size(), dir_name)
+
+    @staticmethod
+    def __write_permission(view, edit, dir_name, permission, width):
+        space_num = width - Utility.string_width(dir_name.decode(UTF8))\
+            - len(permission) - UPDATE_TIME_LEN - MARGIN
+        WriteResult.insert_space(view, edit, space_num)
+        view.insert(edit, view.size(), permission)
+
+    @staticmethod
     def insert_space(view, edit, space_num):
-        for x in range(space_num):
-            view.insert(edit, view.size(), SPACE_CHAR)
+        space = SPACE_CHAR * space_num
+        view.insert(edit, view.size(), space)
 
     @staticmethod
     def update_result(view, edit):
@@ -275,13 +326,13 @@ class ViewManager:
 
     def __init__(self, view):
         cur_dir = FileSystemManager.get_cur_dir()
-        self.view_string = \
-            FileSystemManager.get_current_dir_list(cur_dir)
-            # read all view string.
-            #view.substr(sublime.Region(0, view.size())).split("\n")
+        dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
+        self.dir_list = FileSystemManager.sort_dir_dict_key(dir_dict)
+        # read all view string.
+        #view.substr(sublime.Region(0, view.size())).split("\n")
 
     def get_line_dir(self, index):
-        return self.view_string[index].split(UPDATE_TIME_DELIMITER)[0]
+        return self.dir_list[index]
 
     def get_abs_path(self, index):
         return FileSystemManager.get_abs_path(self.get_line_dir(index))
@@ -349,20 +400,9 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
 
-        # check prev dir.
-        if True == self.is_prevdir(row):
-            return
-
         # show output panel.
         self.src_path = ViewManager(self.view).get_abs_path(row)
         self.show_rename_panel(self.src_path)
-
-    def is_prevdir(self, index):
-        cur_path = ViewManager(self.view).get_line_dir(index)
-
-        if cur_path.rstrip(ENTER_CHAR) == (PREV_DIR + DELIMITER_DIR):
-            return True
-        return False
 
     def show_rename_panel(self, path):
         window = self.view.window()
@@ -390,20 +430,9 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
 
-        # check prev dir.
-        if True == self.is_prevdir(row):
-            return
-
         # show output panel.
         path = ViewManager(self.view).get_abs_path(row)
         self.show_rename_panel(path)
-
-    def is_prevdir(self, index):
-        cur_path = ViewManager(self.view).get_line_dir(index)
-
-        if cur_path.rstrip(ENTER_CHAR) == (PREV_DIR + DELIMITER_DIR):
-            return True
-        return False
 
     def show_rename_panel(self, path):
         window = self.view.window()
