@@ -96,6 +96,8 @@ class SettingManager:
     MIND_MAP_COMMAND = "mind_map"
     MIND_MAP_EX = "mind_map_ex"
     CHM_COMMAND = "chm"
+    HIDE_OWNER = "hide_owner"
+    HIDE_PERMISSION = "hide_permission"
 
     @staticmethod
     def init():
@@ -118,6 +120,10 @@ class SettingManager:
             SettingManager.settings.get(SettingManager.MIND_MAP_EX, "")
         SettingManager.option[SettingManager.CHM_COMMAND] = \
             SettingManager.settings.get(SettingManager.CHM_COMMAND, "")
+        SettingManager.option[SettingManager.HIDE_OWNER] = \
+            SettingManager.settings.get(SettingManager.HIDE_OWNER, True)
+        SettingManager.option[SettingManager.HIDE_PERMISSION] = \
+            SettingManager.settings.get(SettingManager.HIDE_PERMISSION, True)
 
     @staticmethod
     def get(key):
@@ -235,10 +241,14 @@ class FileSystemManager:
 
     @staticmethod
     def __get_owner(abs_path):
+        if True == SettingManager.get(SettingManager.HIDE_OWNER):
+            return ""
         return FileSystemManager.get_owner(abs_path)
 
     @staticmethod
     def __get_per_info(abs_path):
+        if True == SettingManager.get(SettingManager.HIDE_PERMISSION):
+            return ""
         return FileSystemManager.get_permission(abs_path)
 
     @staticmethod
