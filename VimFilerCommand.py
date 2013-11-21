@@ -909,9 +909,9 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
     DEFAULT_PATTERN = u'.*'
     CAPTION = u'Grep File'
     COMP_MSG = u'Grep File Complete'
+    GREP_PROCESS_MSG = u'Grep Process...............'
 
     def run(self, edit):
-        # show output panel.
         self.edit = edit
         self.show_panel()
 
@@ -926,11 +926,12 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
 
     def start_thread(self, pattern):
         # start grep.
+        sublime.set_timeout(lambda: sublime.status_message(self.GREP_PROCESS_MSG), 50)
         self.search_list = self.get_search_list(pattern)
 
         # show grep result in quick panel.
-        sublime.set_timeout(lambda: sublime.status_message(self.COMP_MSG), 100)
-        sublime.set_timeout(lambda: self.view.window().show_quick_panel(self.search_list, self.on_selected_done), 100)
+        sublime.set_timeout(lambda: sublime.status_message(self.COMP_MSG), 50)
+        sublime.set_timeout(lambda: self.view.window().show_quick_panel(self.search_list, self.on_selected_done), 50)
 
     def get_search_list(self, pattern):
         search_list = []
