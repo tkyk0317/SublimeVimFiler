@@ -2,8 +2,6 @@
 import sublime
 import sublime_plugin
 import os
-import dircache
-import os.path
 import shutil
 import datetime
 import unicodedata
@@ -23,7 +21,7 @@ ENTER_CHAR = "\n"
 PREV_DIR = ".."
 ROOT_DIR = "/"
 HOME_ENV = "HOME"
-DELIMITER_DIR = "/"
+DELIMITER_DIR = os.sep
 UPDATE_TIME_DELIMITER = ","
 UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
 UPDATE_TIME_LEN = 17
@@ -35,6 +33,17 @@ SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
 OWNER_INDEX = 0
 PERMISIION_INDEX = 1
 UPDATE_TIME_INDEX = 2
+READ_BIT = 4
+WRITE_BIT = 2
+EXECUTE_BIT = 1
+
+
+class ProcessTime:
+
+    @staticmethod
+    def get_time():
+        import time
+        return time.time() * 1000
 
 
 class SettingManager:
@@ -50,11 +59,11 @@ class SettingManager:
 
         # load value.
         SettingManager.option[SettingManager.HIDE_DOTFILES_KEY] = \
-            SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, "")
+            SettingManager.settings.get(SettingManager.HIDE_DOTFILES_KEY, True)
         SettingManager.option[SettingManager.BOOKMARK_FILE] = \
             SettingManager.settings.get(SettingManager.BOOKMARK_FILE, "")
         SettingManager.option[SettingManager.LIMIT_LEN] = \
-            SettingManager.settings.get(SettingManager.LIMIT_LEN, 50)
+            SettingManager.settings.get(SettingManager.LIMIT_LEN, 40)
 
     @staticmethod
     def get(key):
@@ -77,6 +86,19 @@ class Utility:
     def __get_char_width(c):
         char_width = unicodedata.east_asian_width(c)
         return 2 if (char_width in Utility.WFA) else 1
+
+    @staticmethod
+    def get_char_num(string):
+        char_len = 0
+        width = 0
+        limit = SettingManager.get(SettingManager.LIMIT_LEN)
+        for c in string:
+            width = width + Utility.__get_char_width(c)
+            if width < limit:
+                char_len = char_len + 1
+            else:
+                break
+        return char_len
 
     @staticmethod
     def rm_dir(path):
@@ -112,9 +134,6 @@ class Utility:
 
 class FileSystemManager:
 
-    READ_BIT = 4
-    WRITE_BIT = 2
-    EXECUTE_BIT = 1
     cur_path = ""
 
     @staticmethod
@@ -128,7 +147,7 @@ class FileSystemManager:
 
     @staticmethod
     def get_abs_path(path):
-        return FileSystemManager.cur_path + DELIMITER_DIR + path
+        return os.path.join(FileSystemManager.cur_path, path)
 
     @staticmethod
     def get_current_dir_list(dir_path):
@@ -138,57 +157,46 @@ class FileSystemManager:
 
         # hide dotfiles.
         dir_dict = FileSystemManager.hide_dot_files(dir_dict)
-
-        # add owner/permisiion/update time.
-        FileSystemManager.add_owner_info(dir_dict)
-        FileSystemManager.add_permission_info(dir_dict)
-        FileSystemManager.add_update_time(dir_dict)
         return dir_dict
 
     @staticmethod
     def create_dict_list(path):
-        list_dir = dircache.listdir(path)
-        dir_dict = {}
-        for dir_name in list_dir:
-            abs_path = FileSystemManager.get_abs_path(dir_name)
-            # if directory, add "/".
-            if FileSystemManager.is_dir(abs_path):
-                dir_name = dir_name + DELIMITER_DIR
-            # first value is permission info, second is update time info.
-            dir_dict[dir_name] = []
-        return dir_dict
+        list_dir = os.listdir(path.decode(UTF8))
+        return dict([(FileSystemManager.__get_dir_tuple(n)) for n in list_dir])
+
+    @staticmethod
+    def __get_dir_tuple(dir_name):
+        abs_path = FileSystemManager.get_abs_path(dir_name)
+        # if directory, add "/".
+        if FileSystemManager.is_dir(abs_path):
+            dir_name = dir_name + DELIMITER_DIR
+        return dir_name, FileSystemManager.__get_dir_info(abs_path)
+
+    @staticmethod
+    def __get_dir_info(abs_path):
+        owner = FileSystemManager.__get_owner(abs_path)
+        permission = FileSystemManager.__get_per_info(abs_path)
+        update_time = FileSystemManager.__get_update_time(abs_path)
+        return [owner, permission, update_time]
+
+    @staticmethod
+    def __get_owner(abs_path):
+        return FileSystemManager.get_owner(abs_path)
+
+    @staticmethod
+    def __get_per_info(abs_path):
+        return FileSystemManager.get_permission(abs_path)
+
+    @staticmethod
+    def __get_update_time(abs_path):
+        return FileSystemManager.get_update_time(abs_path)
 
     @staticmethod
     def hide_dot_files(dir_dict):
         # check hide_dotfiles settings.
         if True != SettingManager.get(SettingManager.HIDE_DOTFILES_KEY):
             return dir_dict
-        # hide dot files.
         return dict([(k, v) for k, v in dir_dict.items() if False == k.startswith(DOT)])
-
-    @staticmethod
-    def add_owner_info(dir_dict):
-        # add owner info.
-        for dir_name in dir_dict:
-            abs_path = FileSystemManager.get_abs_path(dir_name)
-            owner_info = FileSystemManager.get_owner(abs_path)
-            dir_dict[dir_name].append(owner_info)
-
-    @staticmethod
-    def add_permission_info(dir_dict):
-        # add permission info.
-        for dir_name in dir_dict:
-            abs_path = FileSystemManager.get_abs_path(dir_name)
-            permission_info = FileSystemManager.get_permission(abs_path)
-            dir_dict[dir_name].append(permission_info)
-
-    @staticmethod
-    def add_update_time(dir_dict):
-        # get update time.
-        for dir_name in dir_dict:
-            abs_path = FileSystemManager.get_abs_path(dir_name)
-            update_time = FileSystemManager.get_update_time(abs_path)
-            dir_dict[dir_name].append(update_time)
 
     @staticmethod
     def is_dir(path):
@@ -221,8 +229,7 @@ class FileSystemManager:
     @staticmethod
     def get_update_time(path):
         last_modified = os.stat(path).st_mtime
-        time = datetime.datetime.fromtimestamp(last_modified)
-        return time.strftime(UPDATE_TIME_FORMAT)
+        return datetime.datetime.fromtimestamp(last_modified).strftime(UPDATE_TIME_FORMAT)
 
     @staticmethod
     def get_permission(path):
@@ -237,24 +244,8 @@ class FileSystemManager:
 
     @staticmethod
     def __get_permission(bit):
-        convert = ""
-        num = int(bit, 8)
-        if FileSystemManager.READ_BIT & num:
-            # enable read bit.
-            convert = convert + "r"
-        else:
-            convert = convert + "-"
-        if FileSystemManager.WRITE_BIT & num:
-            # enable write bit.
-            convert = convert + "w"
-        else:
-            convert = convert + "-"
-        if FileSystemManager.EXECUTE_BIT & num:
-            # enable execute bit.
-            convert = convert + "x"
-        else:
-            convert = convert + "-"
-        return convert
+        n = int(bit, 10)
+        return ("r" if READ_BIT & n else "-") + ("w" if WRITE_BIT & n else "-") + ("x" if EXECUTE_BIT & n else "-")
 
     @staticmethod
     def get_owner(path):
@@ -274,62 +265,51 @@ class WriteResult:
     @staticmethod
     def write(view, edit, dir_dict):
         # get width of view.
-        width = int(view.viewport_extent()[0] / view.em_width())
-
-        # delete all.
+        w = int(view.viewport_extent()[0] / view.em_width())
         view.erase(edit, sublime.Region(0, view.size()))
 
         # write result.
         dir_list = FileSystemManager.sort_dir_dict_key(dir_dict)
-        dir_end_name = dir_list[len(dir_list) - 1]
-        for dir, dir_info_list in FileSystemManager.sort_dir_dict(dir_dict):
-            owner = dir_info_list[OWNER_INDEX]
-            per = dir_info_list[PERMISIION_INDEX]
-            time = dir_info_list[UPDATE_TIME_INDEX]
-
-            # write path.
-            dir_len = WriteResult.__write_dir_name(view, edit, dir)
-
-            # insert space.
-            space_num = width - dir_len - len(owner) - len(per) - UPDATE_TIME_LEN - MARGIN
-            WriteResult.insert_space(view, edit, space_num)
-
-            # write owner and permission info.
-            WriteResult.__write_owner(view, edit, owner)
-            WriteResult.__write_permission(view, edit, per)
-
-            # write update time.
-            WriteResult.insert_space(view, edit, PERMISSION_SPACE)
-            if dir != dir_end_name:
-                view.insert(edit, view.size(), time + ENTER_CHAR)
-            else:
-                view.insert(edit, view.size(), time)
+        end_name = dir_list[len(dir_list) - 1]
+        [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in FileSystemManager.sort_dir_dict(dir_dict)]
 
         # cursor move to BOF.
         view.run_command("move_to", {"to": "bof"})
 
     @staticmethod
-    def __write_dir_name(view, edit, dir_name):
-        # check dir_name len.
-        if SettingManager.get(SettingManager.LIMIT_LEN) < Utility.string_width(dir_name.decode(UTF8)):
-            dir_name = dir_name[:SettingManager.get(SettingManager.LIMIT_LEN)]
-        view.insert(edit, view.size(), dir_name)
-        return Utility.string_width(dir_name.decode(UTF8))
+    def __write(view, edit, width, dir_name, info, end_dir_name):
+        owner = info[OWNER_INDEX]
+        per = info[PERMISIION_INDEX]
+        update_time = info[UPDATE_TIME_INDEX]
+
+        # get write dir name.
+        write_dir = WriteResult.__get_dir_string(dir_name, width)
+
+        # create insert string.
+        space_num = WriteResult.__get_space_num(width, [write_dir, owner, per, update_time])
+        w_str = write_dir + (space_num * SPACE_CHAR) + owner + (SPACE_CHAR) + per + (SPACE_CHAR) + update_time
+
+        # write string.
+        if dir_name != end_dir_name:
+            view.insert(edit, view.size(), w_str + ENTER_CHAR)
+        else:
+            view.insert(edit, view.size(), w_str)
 
     @staticmethod
-    def __write_owner(view, edit, owner):
-        WriteResult.insert_space(view, edit, 1)
-        view.insert(edit, view.size(), owner)
+    def __get_dir_string(dir_name, width):
+        char_len = Utility.get_char_num(dir_name)
+        char_len_width = Utility.string_width(dir_name[:char_len].decode(UTF8))
+
+        # check char len is over display width(3/5).
+        limit_width = int(width * 3 / 5)
+        if char_len_width > limit_width:
+            # decrease ten characters.
+            return WriteResult.__get_dir_string(dir_name[:(char_len - 10)], width)
+        return dir_name[:char_len].decode(UTF8)
 
     @staticmethod
-    def __write_permission(view, edit, permission):
-        WriteResult.insert_space(view, edit, 2)
-        view.insert(edit, view.size(), permission)
-
-    @staticmethod
-    def insert_space(view, edit, space_num):
-        space = SPACE_CHAR * space_num
-        view.insert(edit, view.size(), space)
+    def __get_space_num(width, write_list):
+        return width - sum([Utility.string_width(string.decode(UTF8)) for string in write_list]) - MARGIN
 
     @staticmethod
     def update_result(view, edit):
@@ -349,13 +329,10 @@ class VimFilerCommand(sublime_plugin.TextCommand):
 
         # get current dir list.
         self.cur_path = self.get_current_dir()
-
-        # set current directory.
         FileSystemManager.set_cur_dir(self.cur_path)
 
         # get current directory list.
-        self.cur_dir_list = \
-            FileSystemManager.get_current_dir_list(self.cur_path)
+        self.cur_dir_list = FileSystemManager.get_current_dir_list(self.cur_path)
 
         # show result.
         self.show_result(self.cur_dir_list, edit)
@@ -381,6 +358,13 @@ class VimFilerCommand(sublime_plugin.TextCommand):
             return ROOT_DIR
         else:
             return os.path.dirname(file_name)
+
+    def get_target_view(self):
+        views = self.view.window().views()
+        for v in views:
+            if BUFFER_NAME == v.name():
+                return v
+        return None
 
 
 class ViewManager:
@@ -819,7 +803,7 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
         try:
             self.copy(dst_path)
             WriteResult.update_result(self.view, self.edit)
-            #sublime.status_message(self.COMP_MSG)
+            sublime.status_message(self.COMP_MSG)
         except:
             sublime.message_dialog(self.ERR_MSG)
 
