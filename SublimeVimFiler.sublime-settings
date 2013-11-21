@@ -11,6 +11,10 @@
     "chm": "chmsee",
     // hide dotfiles.
     "hide_dotfiles": true,
+    // hide owner info.
+    "hide_owner": true,
+    // hide permission info.
+    "hide_permission": true,
     // display limit length.
     "limit_length": 100,
     // bookmark file.
