@@ -7,6 +7,8 @@ import datetime
 import unicodedata
 import pwd
 import stat
+import mimetypes
+import subprocess
 
 # set utf-8 encoding(for japanese language).
 import sys
@@ -46,12 +48,52 @@ class ProcessTime:
         return time.time() * 1000
 
 
+class MimeTypeManager:
+
+    PDF_MIMETYPE = "pdf"
+    WORD_MIMETYPE = "word"
+    EXCEL_MIMETYPE = "excel"
+    POWER_POINT_MIMETYPE = "powerpoint"
+    PRESENTATION_MIMETYPE = "officedocument.presentationml"
+    SPREAD_SHEET_MIMETYPE = "officedocument.spreadsheetml"
+    MIND_MAP_MIMETYPE = "mindmap"
+    CHM_MIMETYPE = "chemdraw"
+    TEXT_MIMETYPE = "text"
+
+    @staticmethod
+    def get_mime_type(abs_path):
+        types, sub_type = mimetypes.guess_type(abs_path)
+        mime_type = MimeTypeManager.TEXT_MIMETYPE
+
+        # check mime type.
+        if None != types:
+            if MimeTypeManager.PDF_MIMETYPE in types:
+                mime_type = MimeTypeManager.PDF_MIMETYPE
+            elif MimeTypeManager.WORD_MIMETYPE in types:
+                mime_type = MimeTypeManager.WORD_MIMETYPE
+            elif (MimeTypeManager.EXCEL_MIMETYPE) in types or (MimeTypeManager.SPREAD_SHEET_MIMETYPE in types):
+                mime_type = MimeTypeManager.EXCEL_MIMETYPE
+            elif (MimeTypeManager.POWER_POINT_MIMETYPE) in types or (MimeTypeManager.PRESENTATION_MIMETYPE in types):
+                mime_type = MimeTypeManager.POWER_POINT_MIMETYPE
+            elif MimeTypeManager.CHM_MIMETYPE in types:
+                mime_type = MimeTypeManager.CHM_MIMETYPE
+        else:
+            if os.path.splitext(abs_path)[1] in SettingManager.get(SettingManager.MIND_MAP_EX):
+                mime_type = MimeTypeManager.MIND_MAP_MIMETYPE
+        return mime_type
+
+
 class SettingManager:
 
     option = {}
     HIDE_DOTFILES_KEY = "hide_dotfiles"
     BOOKMARK_FILE = "bookmark_file"
     LIMIT_LEN = "limit_length"
+    PDF_COMMAND = "pdf"
+    OFFICE_COMMAND = "office"
+    MIND_MAP_COMMAND = "mind_map"
+    MIND_MAP_EX = "mind_map_ex"
+    CHM_COMMAND = "chm"
 
     @staticmethod
     def init():
@@ -64,6 +106,16 @@ class SettingManager:
             SettingManager.settings.get(SettingManager.BOOKMARK_FILE, "")
         SettingManager.option[SettingManager.LIMIT_LEN] = \
             SettingManager.settings.get(SettingManager.LIMIT_LEN, 40)
+        SettingManager.option[SettingManager.PDF_COMMAND] = \
+            SettingManager.settings.get(SettingManager.PDF_COMMAND, "")
+        SettingManager.option[SettingManager.OFFICE_COMMAND] = \
+            SettingManager.settings.get(SettingManager.OFFICE_COMMAND, "")
+        SettingManager.option[SettingManager.MIND_MAP_COMMAND] = \
+            SettingManager.settings.get(SettingManager.MIND_MAP_COMMAND, "")
+        SettingManager.option[SettingManager.MIND_MAP_EX] = \
+            SettingManager.settings.get(SettingManager.MIND_MAP_EX, "")
+        SettingManager.option[SettingManager.CHM_COMMAND] = \
+            SettingManager.settings.get(SettingManager.CHM_COMMAND, "")
 
     @staticmethod
     def get(key):
@@ -432,7 +484,29 @@ class VimFilerOpenFileCommand(sublime_plugin.TextCommand):
 
         # check file.
         if FileSystemManager.is_file(path):
-            self.view.window().open_file(path)
+            self.open(path.decode(UTF8))
+
+    def open(self, abs_path):
+        # open file by file mime types.
+        mime_type = MimeTypeManager.get_mime_type(abs_path)
+        if MimeTypeManager.EXCEL_MIMETYPE == mime_type or MimeTypeManager.WORD_MIMETYPE == mime_type or \
+           MimeTypeManager.POWER_POINT_MIMETYPE == mime_type:
+            command = SettingManager.get(SettingManager.OFFICE_COMMAND)
+            subprocess.Popen([command, abs_path])
+        elif MimeTypeManager.PDF_MIMETYPE == mime_type:
+            command = SettingManager.get(SettingManager.PDF_COMMAND)
+            subprocess.Popen([command, abs_path])
+        elif MimeTypeManager.MIND_MAP_MIMETYPE == mime_type:
+            command = SettingManager.get(SettingManager.MIND_MAP_COMMAND)
+            subprocess.Popen([command, abs_path])
+        elif MimeTypeManager.CHM_MIMETYPE == mime_type:
+            command = SettingManager.get(SettingManager.CHM_COMMAND)
+            subprocess.Popen([command, abs_path])
+        else:
+            self.view.window().open_file(abs_path)
+
+    def create_command(self, command, abs_path):
+        return '"' + command + SPACE_CHAR + abs_path + '"'
 
 
 class VimFilerRenameCommand(sublime_plugin.TextCommand):
@@ -496,8 +570,7 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
 
     def delete(self, path):
         # check directory or file.
-        if True == FileSystemManager.is_dir(path) and \
-           False == FileSystemManager.is_link(path):
+        if True == FileSystemManager.is_dir(path) and False == FileSystemManager.is_link(path):
             Utility.rm_dir(path)
         else:
             os.remove(path)

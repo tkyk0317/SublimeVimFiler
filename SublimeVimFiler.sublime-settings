@@ -1,4 +1,14 @@
 {
+    // pdf viewer.
+    "pdf": "apvlv",
+    // office command.
+    "office": "libreoffice",
+    // mind map command.
+    "mind_map": "XMind",
+    // mind mao extension(.xmind etc).
+    "mind_map_ex": [".xmind", ".mind"],
+    // chem document open command.
+    "chm": "chmsee",
     // hide dotfiles.
     "hide_dotfiles": true,
     // display limit length.
