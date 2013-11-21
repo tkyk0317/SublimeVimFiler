@@ -1,6 +1,8 @@
 {
     // hide dotfiles.
     "hide_dotfiles": true,
+    // display limit length.
+    "limit_length": 100,
     // bookmark file.
     "bookmark_file": "~/.sublime_vimfiler_bookmark"
 }
