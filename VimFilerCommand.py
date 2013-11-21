@@ -9,6 +9,8 @@ import pwd
 import stat
 import mimetypes
 import subprocess
+import re
+import threading
 
 # set utf-8 encoding(for japanese language).
 import sys
@@ -899,3 +901,53 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
             else:
                 dst_path = self.src_path + self.DST_SUFFIX
         return dst_path
+
+
+class VimFilerGrepCommand(sublime_plugin.TextCommand):
+
+    INVALID_INDEX = -1
+    DEFAULT_PATTERN = u'.*'
+    CAPTION = u'Grep File'
+    COMP_MSG = u'Grep File Complete'
+
+    def run(self, edit):
+        # show output panel.
+        self.edit = edit
+        self.show_panel()
+
+    def show_panel(self):
+        window = self.view.window()
+        window.show_input_panel(self.CAPTION, self.DEFAULT_PATTERN, self.on_input_done, None, None)
+
+    def on_input_done(self, pattern):
+        # grep start(in sub thread).
+        thread = threading.Thread(target=self.start_thread, args=(pattern,))
+        thread.start()
+
+    def start_thread(self, pattern):
+        # start grep.
+        self.search_list = self.get_search_list(pattern)
+
+        # show grep result in quick panel.
+        sublime.set_timeout(lambda: sublime.status_message(self.COMP_MSG), 100)
+        sublime.set_timeout(lambda: self.view.window().show_quick_panel(self.search_list, self.on_selected_done), 100)
+
+    def get_search_list(self, pattern):
+        search_list = []
+        # recursive search.
+        for root, dirs, files in os.walk(FileSystemManager.get_cur_dir()):
+            for f in files:
+                f_path = os.path.join(root, f)
+                # check pattern matching.
+                if None != re.search(pattern, f_path, re.IGNORECASE):
+                    search_list.append(f_path)
+        return search_list
+
+    def on_selected_done(self, index):
+        if self.INVALID_INDEX == index:
+            return
+
+        # open file.
+        find_path = self.search_list[index]
+        if True == FileSystemManager.is_file(find_path):
+            self.view.window().open_file(find_path)
