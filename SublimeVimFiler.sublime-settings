@@ -1,6 +1,22 @@
 {
+    // pdf viewer.
+    "pdf": "apvlv",
+    // office command.
+    "office": "libreoffice",
+    // mind map command.
+    "mind_map": "XMind",
+    // mind mao extension(.xmind etc).
+    "mind_map_ex": [".xmind", ".mind"],
+    // chem document open command.
+    "chm": "chmsee",
     // hide dotfiles.
     "hide_dotfiles": true,
+    // hide owner info.
+    "hide_owner": true,
+    // hide permission info.
+    "hide_permission": true,
+    // display limit length.
+    "limit_length": 100,
     // bookmark file.
     "bookmark_file": "~/.sublime_vimfiler_bookmark"
 }
