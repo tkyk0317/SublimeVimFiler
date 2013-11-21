@@ -969,3 +969,9 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
         find_path = self.search_list[index]
         if True == FileSystemManager.is_file(find_path):
             self.view.window().open_file(find_path)
+
+
+class VimFilerNoActionCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        pass
