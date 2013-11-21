@@ -306,12 +306,18 @@ class FileSystemManager:
         return pwd.getpwuid(os.stat(path)[stat.ST_UID])[0]
 
     @staticmethod
-    def sort_dir_dict(dir_dict):
-        return sorted(dir_dict.items())
+    def comp(key1, key2):
+        if (DELIMITER_DIR in key1) and not(DELIMITER_DIR in key2):
+            # keep.
+            return -1
+        if not(DELIMITER_DIR in key1) and (DELIMITER_DIR in key2):
+            # replace.
+            return 1
+        return cmp(key1, key2)
 
     @staticmethod
-    def sort_dir_dict_key(dir_dict):
-        return sorted(dir_dict.keys())
+    def sort_dir_dict(dir_dict):
+        return sorted(dir_dict.items(), cmp=FileSystemManager.comp, key=lambda x: x[0])
 
 
 class WriteResult:
@@ -323,9 +329,9 @@ class WriteResult:
         view.erase(edit, sublime.Region(0, view.size()))
 
         # write result.
-        dir_list = FileSystemManager.sort_dir_dict_key(dir_dict)
-        end_name = dir_list[len(dir_list) - 1]
-        [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in FileSystemManager.sort_dir_dict(dir_dict)]
+        sort_dict = FileSystemManager.sort_dir_dict(dir_dict)
+        end_name = sort_dict[len(dir_dict) - 1][0]
+        [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in sort_dict]
 
         # cursor move to BOF.
         view.run_command("move_to", {"to": "bof"})
@@ -426,12 +432,13 @@ class ViewManager:
     def __init__(self, view):
         cur_dir = FileSystemManager.get_cur_dir()
         dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
-        self.dir_list = FileSystemManager.sort_dir_dict_key(dir_dict)
+        self.dir_list = FileSystemManager.sort_dir_dict(dir_dict)
         # read all view string.
         #view.substr(sublime.Region(0, view.size())).split("\n")
 
     def get_line_dir(self, index):
-        return self.dir_list[index]
+        # get directoty name.
+        return self.dir_list[index][0]
 
     def get_abs_path(self, index):
         return FileSystemManager.get_abs_path(self.get_line_dir(index))
