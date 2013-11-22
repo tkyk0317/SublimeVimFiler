@@ -20,6 +20,7 @@ sys.setdefaultencoding('utf-8')
 # global variables.
 UTF8 = "utf-8"
 DOT = "."
+CANMA = ","
 SPACE_CHAR = " "
 ENTER_CHAR = "\n"
 PREV_DIR = ".."
@@ -28,15 +29,17 @@ HOME_ENV = "HOME"
 DELIMITER_DIR = os.sep
 UPDATE_TIME_DELIMITER = ","
 UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
-UPDATE_TIME_LEN = 17
 MARGIN = 6
 PERMISSION_SPACE = 2
 BUFFER_NAME = "dir.vimfiler"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
 SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
-OWNER_INDEX = 0
-PERMISIION_INDEX = 1
-UPDATE_TIME_INDEX = 2
+MARK_SYMBLOL = "*"
+NOT_MARK_SYMBOL = SPACE_CHAR
+MARK_INDEX = 0
+OWNER_INDEX = 1
+PERMISIION_INDEX = 2
+UPDATE_TIME_INDEX = 3
 READ_BIT = 4
 WRITE_BIT = 2
 EXECUTE_BIT = 1
@@ -83,6 +86,17 @@ class MimeTypeManager:
             if os.path.splitext(abs_path)[1] in SettingManager.get(SettingManager.MIND_MAP_EX):
                 mime_type = MimeTypeManager.MIND_MAP_MIMETYPE
         return mime_type
+
+
+class CursorManager:
+
+    @staticmethod
+    def move_bof(view):
+        view.run_command("move_to", {"to": "bof"})
+
+    @staticmethod
+    def move_line(view, line):
+        view.run_command("goto_line", {"line": line})
 
 
 class SettingManager:
@@ -177,6 +191,17 @@ class Utility:
         os.rmdir(path)
 
     @staticmethod
+    def copy(src_path, dst_path):
+        if True == FileSystemManager.is_file(src_path):
+            shutil.copy2(src_path, dst_path)
+        elif True == FileSystemManager.is_dir(src_path):
+            if False == FileSystemManager.is_exist(dst_path):
+                # copy tree.
+                shutil.copytree(src_path, dst_path, True)
+            else:
+                Utility.rcopy_file(src_path, dst_path)
+
+    @staticmethod
     def rcopy_file(src_path, dst_path):
         # create root directory.
         dst_root = src_path.rstrip(DELIMITER_DIR)
@@ -243,10 +268,14 @@ class FileSystemManager:
 
     @staticmethod
     def __get_dir_info(abs_path):
+        if True == FileSystemManager.is_dir(abs_path):
+            mark = MARK_SYMBLOL if MarkDictManager.is_exist(abs_path + DELIMITER_DIR) else NOT_MARK_SYMBOL
+        else:
+            mark = MARK_SYMBLOL if MarkDictManager.is_exist(abs_path) else NOT_MARK_SYMBOL
         owner = FileSystemManager.__get_owner(abs_path)
         permission = FileSystemManager.__get_per_info(abs_path)
         update_time = FileSystemManager.__get_update_time(abs_path)
-        return [owner, permission, update_time]
+        return [mark, owner, permission, update_time]
 
     @staticmethod
     def __get_owner(abs_path):
@@ -360,6 +389,37 @@ class FileSystemManager:
                       reverse=r, key=lambda x: x[1])
 
 
+class MarkDictManager:
+
+    mark_dict = {}
+
+    @staticmethod
+    def is_exist_mark():
+        if 0 != len(MarkDictManager.mark_dict):
+            return True
+        return False
+
+    @staticmethod
+    def get_mark_list():
+        return MarkDictManager.mark_dict.keys()
+
+    @staticmethod
+    def add_mark(mark_path):
+        MarkDictManager.mark_dict.setdefault(mark_path, "")
+
+    @staticmethod
+    def del_mark(mark_path):
+        MarkDictManager.mark_dict.pop(mark_path)
+
+    @staticmethod
+    def clear_mark():
+        MarkDictManager.mark_dict.clear()
+
+    @staticmethod
+    def is_exist(abs_path):
+        return abs_path in MarkDictManager.mark_dict
+
+
 class WriteResult:
 
     @staticmethod
@@ -374,10 +434,11 @@ class WriteResult:
         [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in sort_dict]
 
         # cursor move to BOF.
-        view.run_command("move_to", {"to": "bof"})
+        CursorManager.move_bof(view)
 
     @staticmethod
     def __write(view, edit, width, dir_name, info, end_dir_name):
+        mark = info[MARK_INDEX]
         owner = info[OWNER_INDEX]
         per = info[PERMISIION_INDEX]
         update_time = info[UPDATE_TIME_INDEX]
@@ -387,7 +448,8 @@ class WriteResult:
 
         # create insert string.
         space_num = WriteResult.__get_space_num(width, [write_dir, owner, per, update_time])
-        w_str = write_dir + (space_num * SPACE_CHAR) + owner + (SPACE_CHAR) + per + (SPACE_CHAR) + update_time
+        w_str = mark + write_dir + (space_num * SPACE_CHAR) + owner + (SPACE_CHAR) + \
+            per + (SPACE_CHAR) + update_time
 
         # write string.
         if dir_name != end_dir_name:
@@ -469,7 +531,7 @@ class VimFilerCommand(sublime_plugin.TextCommand):
 
 class ViewManager:
 
-    def __init__(self, view):
+    def __init__(self):
         cur_dir = FileSystemManager.get_cur_dir()
         dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
         self.dir_list = FileSystemManager.sort(dir_dict)
@@ -489,7 +551,7 @@ class VimFilerOpenDirCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         # get path of current line.
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        path = ViewManager(self.view).get_abs_path(row)
+        path = ViewManager().get_abs_path(row)
 
         # write directory list.
         if FileSystemManager.is_dir(path):
@@ -529,7 +591,7 @@ class VimFilerOpenFileCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        path = ViewManager(self.view).get_abs_path(row)
+        path = ViewManager().get_abs_path(row)
 
         # check file.
         if FileSystemManager.is_file(path):
@@ -569,7 +631,7 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
 
         # show output panel.
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+        self.src_path = ViewManager().get_abs_path(row)
         self.show_rename_panel(self.src_path)
 
     def show_rename_panel(self, path):
@@ -595,12 +657,45 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
     ERR_MSG = u'Not Exist Deleted Path'
 
     def run(self, edit):
+        # check exist mark list.
         self.edit = edit
-        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        if True == self.is_exist_mark_path():
+            self.show_mark_list()
+        else:
+            (row, col) = self.view.rowcol(self.view.sel()[0].begin())
 
-        # show output panel.
-        path = ViewManager(self.view).get_abs_path(row)
-        self.show_rename_panel(path)
+            # show output panel.
+            path = ViewManager().get_abs_path(row)
+            self.show_rename_panel(path)
+
+    def is_exist_mark_path(self):
+        return MarkDictManager.is_exist_mark()
+
+    def show_mark_list(self):
+        w = self.view.window()
+        w.show_input_panel(self.CAPTION, self.get_mark_list_string(), self.delete_mark_list, None, None)
+
+    def get_mark_list_string(self):
+        string = ""
+        mark_list = MarkDictManager.get_mark_list()
+        for fname in mark_list:
+            if fname != mark_list[len(mark_list) - 1]:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1] + CANMA + SPACE_CHAR
+            else:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1]
+        return string
+
+    def delete_mark_list(self, delete_msg):
+        try:
+            # delete mark list.
+            [self.delete(path) for path in MarkDictManager.get_mark_list()]
+            sublime.status_message(self.COMP_MSG)
+            WriteResult.update_result(self.view, self.edit)
+
+            # clear mark.
+            MarkDictManager.clear_mark()
+        except:
+            sublime.message_dialog(self.ERR_MSG)
 
     def show_rename_panel(self, path):
         window = self.view.window()
@@ -698,10 +793,10 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
     ERR_MOVE_MSG = u'Not Exist Src File or Dst is not Directory'
 
     def run(self, edit):
-        # get specified file/directory.
+        # get specified file and directory.
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+        self.src_path = ViewManager().get_abs_path(row)
 
         # create move message.
         msg = self.create_message(self.src_path)
@@ -887,25 +982,64 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
     CAPTION = u'Copy File/Directory'
     COMP_MSG = u'Copy File/Directory Complete'
     ERR_MSG = u'Copy Error(Not Exist Path)'
+    COPY_PROCESS_MSG = u'Copy Processing...............'
 
     def run(self, edit):
-        # get specified file/directory.
         self.edit = edit
-        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+        # check exist mark list.
+        if True == self.is_exist_mark_path():
+            self.show_mark_list()
+        else:
+            # get specified file and directory.
+            (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+            self.src_path = ViewManager().get_abs_path(row)
 
-        # create copy message.
-        msg = self.create_message(self.src_path)
+            # show output panel.
+            msg = self.create_message(self.src_path)
+            self.show_panel(msg)
 
-        # show output panel.
-        self.show_panel(msg)
+    def is_exist_mark_path(self):
+        return MarkDictManager.is_exist_mark()
+
+    def show_mark_list(self):
+        w = self.view.window()
+        w.show_input_panel(self.CAPTION,  self.get_mark_list_string(), self.copy_mark_list, None, None)
+
+    def get_mark_list_string(self):
+        string = ""
+        mark_list = MarkDictManager.get_mark_list()
+        for fname in mark_list:
+            if fname != mark_list[len(mark_list) - 1]:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1] + CANMA + SPACE_CHAR
+            else:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1] + self.ARROW
+        return string + FileSystemManager.get_cur_dir()
+
+    def copy_mark_list(self, copy_msg):
+        # check ARROW string.
+        if False == (self.ARROW in copy_msg):
+            return
+
+        try:
+            sublime.status_message(self.COPY_PROCESS_MSG)
+
+            # copy mark list.
+            cur_path = FileSystemManager.get_cur_dir()
+            [Utility.copy(src, cur_path) for src in MarkDictManager.get_mark_list()]
+            sublime.status_message(self.COMP_MSG)
+            WriteResult.update_result(self.view, self.edit)
+
+            # clear mark.
+            MarkDictManager.clear_mark()
+        except:
+            sublime.message_dialog(self.ERR_MSG)
 
     def create_message(self, src_path):
         return src_path + self.ARROW + src_path
 
     def show_panel(self, path):
-        window = self.view.window()
-        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
+        w = self.view.window()
+        w.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, copy_msg):
         # check ARROW string.
@@ -921,23 +1055,15 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
         dst_path = copy_msg.split(self.ARROW_SUFFIX)[1]
         dst_path = self.get_dst_path(dst_path)
 
-        # copy.
         try:
-            self.copy(dst_path)
+            sublime.status_message(self.COPY_PROCESS_MSG)
+
+            # copy.
+            Utility.copy(self.src_path, dst_path)
             WriteResult.update_result(self.view, self.edit)
             sublime.status_message(self.COMP_MSG)
         except:
             sublime.message_dialog(self.ERR_MSG)
-
-    def copy(self, dst_path):
-        if True == FileSystemManager.is_file(self.src_path):
-            shutil.copy2(self.src_path, dst_path)
-        elif True == FileSystemManager.is_dir(self.src_path):
-            if False == FileSystemManager.is_exist(dst_path):
-                # copy tree.
-                shutil.copytree(self.src_path, dst_path, True)
-            else:
-                Utility.rcopy_file(self.src_path, dst_path)
 
     def get_dst_path(self, dst_path):
         # check src_path equal dst path.
@@ -1011,7 +1137,8 @@ class VimFilerSortCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, **args):
         # check current sort kind.
-        sort_kind = args[SettingManager.SORT_KIND]
+        sort_kind = args.get(SettingManager.SORT_KIND, "")
+        sublime.status_message(sort_kind)
         if sort_kind == SettingManager.get(SettingManager.get(SettingManager.SORT_KIND)):
             return
 
@@ -1041,3 +1168,44 @@ class VimFilerSortReverseCommand(sublime_plugin.TextCommand):
 
         # refresh view.
         WriteResult.update_result(self.view, edit)
+
+
+class VimFilerMarkCommand(sublime_plugin.TextCommand):
+
+    ARG_KEY = "option"
+    ADD_MARK = "add"
+    CLEAR_MARK = "clear"
+    ARG_LIST = [ADD_MARK, CLEAR_MARK]
+    ADD_MSG = "Add Mark: "
+    DEL_MSG = "Delete Mark: "
+    CLEAR_MSG = "Clear Added All Mark"
+
+    def run(self, edit, **args):
+        # check enable argment.
+        option = args.get(self.ARG_KEY, "")
+        if False == self.is_valid_arg(option):
+            return
+
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        if self.ADD_MARK == option:
+            # mark current directory and file.
+            cur_path = ViewManager().get_abs_path(row)
+
+            # add mark path.
+            if True == MarkDictManager.is_exist(cur_path):
+                MarkDictManager.del_mark(cur_path)
+                sublime.status_message(self.DEL_MSG + cur_path)
+            else:
+                MarkDictManager.add_mark(cur_path)
+                sublime.status_message(self.ADD_MSG + cur_path)
+        else:
+            MarkDictManager.clear_mark()
+            sublime.status_message(self.CLEAR_MSG)
+        # reresh.
+        WriteResult.update_result(self.view, edit)
+
+        # move current line.
+        CursorManager.move_line(self.view, row + 1)
+
+    def is_valid_arg(self, kind):
+        return kind in self.ARG_LIST
