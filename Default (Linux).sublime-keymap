@@ -1,0 +1,38 @@
+[
+    { "keys": [" ", "f", "e"], "command": "vim_filer", "context": [{ "key": "setting.command_mode"}] },
+    { "keys": ["j"], "command": "move", "args": {"by": "lines", "forward": true}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["k"], "command": "move", "args": {"by": "lines", "forward": false}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["l"], "command": "vim_filer_open_dir", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["h"], "command": "vim_filer_open_prev_dir", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["enter"], "command": "vim_filer_open_file", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["e"], "command": "vim_filer_open_file", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["~"], "command": "vim_filer_open_home_dir", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["r", "r"], "command": "vim_filer_rename", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["d", "d"], "command": "vim_filer_delete", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["N"], "command": "vim_filer_create_file", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["K"], "command": "vim_filer_create_dir", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["m", "m"], "command": "vim_filer_move", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["c", "c"], "command": "vim_filer_copy", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["."], "command": "vim_filer_appear_or_hide_dotfiles", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["f5"], "command": "vim_filer_refresh", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["b", "a"], "command": "vim_filer_add_bookmark", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["b", "o"], "command": "vim_filer_open_bookmark", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["b", "e"], "command": "vim_filer_edit_bookmark", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["g", "f"], "command": "vim_filer_grep_path", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["d", "s"], "command": "vim_filer_sort", "args": {"sort_kind": "dir"}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["t", "s"], "command": "vim_filer_sort", "args": {"sort_kind": "time"}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["n", "s"], "command": "vim_filer_sort", "args": {"sort_kind": "name"}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["r", "s"], "command": "vim_filer_sort_reverse", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["m", "a"], "command": "vim_filer_mark", "args":{ "option": "add"}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["m", "c"], "command": "vim_filer_mark", "args":{ "option": "clear"}, "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},    // grep window表示.
+    { "keys": ["x"], "command": "vim_filer_no_action", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["i"], "command": "vim_filer_no_action", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["s"], "command": "vim_filer_no_action", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["q"], "command": "close_file", "context": [{"key": "selector", "operator": "equal", "operand": "text.vimfiler"}]},
+    { "keys": ["ctrl+g"], "command": "show_panel", "args": {"panel": "find_in_files"}, "context": [ {"key": "setting.command_mode"}] },
+    { "keys": ["j"], "command": "move", "args": {"by": "lines", "forward": true}, "context": [{"key": "selector", "operator": "equal", "operand": "text.grepfile"}]},
+    { "keys": ["k"], "command": "move", "args": {"by": "lines", "forward": false}, "context": [{"key": "selector", "operator": "equal", "operand": "text.grepfile"}]},
+    { "keys": ["enter"], "command": "vim_filer_open_grep_result", "context": [{"key": "selector", "operator": "equal", "operand": "text.grepfile"}]},
+    { "keys": ["e"], "command": "vim_filer_open_grep_result", "context": [{"key": "selector", "operator": "equal", "operand": "text.grepfile"}]},
+    { "keys": ["q"], "command": "close_file", "context": [{"key": "selector", "operator": "equal", "operand": "text.grepfile"}]}
+]
