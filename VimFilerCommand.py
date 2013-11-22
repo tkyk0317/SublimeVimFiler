@@ -438,7 +438,7 @@ class WriteResult:
         end_name = sort_dict[len(dir_dict) - 1][0]
         [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in sort_dict]
 
-        # cursor move to BOF.
+        # active view and cursor move to BOF.
         CursorManager.move_bof(view)
 
     @staticmethod
@@ -513,10 +513,29 @@ class VimFilerCommand(sublime_plugin.TextCommand):
     def show_result(self, dir_list, edit):
         output_file = self.get_output_file()
 
-        # show result.
+        # show result and focus.
         WriteResult.write(output_file, edit, dir_list)
+        self.view.window().focus_view(output_file)
 
     def get_output_file(self):
+        if True == self.is_aleready_buffer():
+            return self.get_already_buffer()
+        else:
+            return self.create_buffer()
+
+    def is_aleready_buffer(self):
+        for v in self.view.window().views():
+            if v.name() == BUFFER_NAME:
+                return True
+        return False
+
+    def get_already_buffer(self):
+        for v in self.view.window().views():
+            if v.name() == BUFFER_NAME:
+                return v
+        return None
+
+    def create_buffer(self):
         output_file = self.view.window().new_file()
         output_file.set_syntax_file(SYNTAX_FILE)
         output_file.set_name(BUFFER_NAME)
