@@ -9,6 +9,8 @@
     "mind_map_ex": [".xmind", ".mind"],
     // chem document open command.
     "chm": "chmsee",
+    // ignore directory in grep file.
+    "ignore_dir": [".git", ".svn", "CVS", "obj", "gen"],
     // hide dotfiles.
     "hide_dotfiles": true,
     // hide owner info.
