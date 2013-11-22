@@ -32,7 +32,9 @@ UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
 MARGIN = 6
 PERMISSION_SPACE = 2
 BUFFER_NAME = "dir.vimfiler"
+GREP_PATH_BUFFER_NAME = "result.grepfile"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
+GREP_PATH_SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFilerGrepPathResult.tmLanguage"
 SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
 MARK_SYMBLOL = "*"
 NOT_MARK_SYMBOL = SPACE_CHAR
@@ -112,6 +114,7 @@ class SettingManager:
     CHM_COMMAND = "chm"
     HIDE_OWNER = "hide_owner"
     HIDE_PERMISSION = "hide_permission"
+    IGNORE_DIR = "ignore_dir"
     SORT_KIND = "sort_kind"
     SORT_DIR = "dir"
     SORT_TIME = "time"
@@ -143,6 +146,8 @@ class SettingManager:
             SettingManager.settings.get(SettingManager.HIDE_OWNER, True)
         SettingManager.option[SettingManager.HIDE_PERMISSION] = \
             SettingManager.settings.get(SettingManager.HIDE_PERMISSION, True)
+        SettingManager.option[SettingManager.IGNORE_DIR] = \
+            SettingManager.settings.get(SettingManager.IGNORE_DIR, [])
         SettingManager.option[SettingManager.SORT_KIND] = \
             SettingManager.settings.get(SettingManager.SORT_KIND, SettingManager.SORT_DIR)
         SettingManager.option[SettingManager.SORT_REVERSE] = \
@@ -484,13 +489,19 @@ class VimFilerCommand(sublime_plugin.TextCommand):
 
     cur_dir_list = []
     cur_path = ""
+    DIR_KEY = "dir"
 
-    def run(self, edit):
+    def run(self, edit, **args):
         # load settings file.
         SettingManager.init()
 
+        # get current directory.
+        if self.DIR_KEY in args:
+            self.cur_path = args.get(self.DIR_KEY, self.get_current_dir())
+        else:
+            self.cur_path = self.get_current_dir()
+
         # get current dir list.
-        self.cur_path = self.get_current_dir()
         FileSystemManager.set_cur_dir(self.cur_path)
 
         # get current directory list.
@@ -535,8 +546,6 @@ class ViewManager:
         cur_dir = FileSystemManager.get_cur_dir()
         dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
         self.dir_list = Utility.sort(dir_dict)
-        # read all view string.
-        #view.substr(sublime.Region(0, view.size())).split("\n")
 
     def get_line_dir(self, index):
         # get directoty name.
@@ -544,6 +553,10 @@ class ViewManager:
 
     def get_abs_path(self, index):
         return FileSystemManager.get_abs_path(self.get_line_dir(index))
+
+    def get_view_line(self, view, index):
+        # read all view string.
+        return view.substr(sublime.Region(0, view.size())).split("\n")[index]
 
 
 class VimFilerOpenDirCommand(sublime_plugin.TextCommand):
@@ -1076,12 +1089,12 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
         return dst_path
 
 
-class VimFilerGrepCommand(sublime_plugin.TextCommand):
+class VimFilerGrepPathCommand(sublime_plugin.TextCommand):
 
     INVALID_INDEX = -1
     DEFAULT_PATTERN = u'.*'
-    CAPTION = u'Grep File'
-    COMP_MSG = u'Grep File Complete'
+    CAPTION = u'Grep Directory/File'
+    COMP_MSG = u'Grep Directory/File Complete'
     GREP_PROCESS_MSG = u'Grep Process...............'
 
     def run(self, edit):
@@ -1102,20 +1115,54 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
         sublime.set_timeout(lambda: sublime.status_message(self.GREP_PROCESS_MSG), 50)
         self.search_list = self.get_search_list(pattern)
 
-        # show grep result in quick panel.
+        # show grep result.
+        output_file = self.output_result(self.search_list)
+        sublime.set_timeout(CursorManager.move_bof(output_file), 50)
         sublime.set_timeout(lambda: sublime.status_message(self.COMP_MSG), 50)
-        sublime.set_timeout(lambda: self.view.window().show_quick_panel(self.search_list, self.on_selected_done), 50)
 
     def get_search_list(self, pattern):
         search_list = []
         # recursive search.
         for root, dirs, files in os.walk(FileSystemManager.get_cur_dir()):
-            for f in files:
-                f_path = os.path.join(root, f)
-                # check pattern matching.
-                if None != re.search(pattern, f_path, re.IGNORECASE):
-                    search_list.append(f_path)
+            # search directory.
+            for dname in dirs:
+                self.add_match_pattern_path(search_list, root, dname, pattern)
+            # search file.
+            for fname in files:
+                self.add_match_pattern_path(search_list, root, fname, pattern)
         return search_list
+
+    def add_match_pattern_path(self, search_list, root, path, pattern):
+        abs_path = os.path.join(root, path)
+        # check ignore directory.
+        if False == self.is_ignore_dir(abs_path):
+            # check pattern.
+            if None != re.search(pattern, abs_path, re.IGNORECASE):
+                if True == FileSystemManager.is_dir(abs_path):
+                    abs_path = abs_path + DELIMITER_DIR
+                search_list.append(abs_path)
+
+    def is_ignore_dir(self, dname):
+        # search ignore directory.
+        for ignore_dir in SettingManager.get(SettingManager.IGNORE_DIR):
+            if ignore_dir in dname:
+                return True
+        return False
+
+    def output_result(self, search_list):
+        output_file = self.view.window().new_file()
+        output_file.set_name(GREP_PATH_BUFFER_NAME)
+        output_file.set_syntax_file(GREP_PATH_SYNTAX_FILE)
+        output_file.set_scratch(True)
+
+        # create write string.
+        result = ""
+        for path in search_list:
+            result = result + path + ENTER_CHAR
+        # write result.
+        sublime.set_timeout(output_file.insert(output_file.begin_edit(), output_file.size(), result), 200)
+        #sublime.set_timeout(lambda: self.view.window().show_quick_panel(search_list, self.on_selected_done), 50)
+        return output_file
 
     def on_selected_done(self, index):
         if self.INVALID_INDEX == index:
@@ -1125,6 +1172,20 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
         find_path = self.search_list[index]
         if True == FileSystemManager.is_file(find_path):
             self.view.window().open_file(find_path)
+
+
+class VimFilerOpenGrepResultCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # get current line.
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        cur_path = ViewManager().get_view_line(self.view, row)
+
+        # open file or directory.
+        if True == FileSystemManager.is_file(cur_path):
+            self.view.window().open_file(cur_path)
+        elif True == FileSystemManager.is_dir(cur_path):
+            self.view.run_command("vim_filer", {VimFilerCommand.DIR_KEY: cur_path})
 
 
 class VimFilerNoActionCommand(sublime_plugin.TextCommand):
@@ -1138,7 +1199,6 @@ class VimFilerSortCommand(sublime_plugin.TextCommand):
     def run(self, edit, **args):
         # check current sort kind.
         sort_kind = args.get(SettingManager.SORT_KIND, "")
-        sublime.status_message(sort_kind)
         if sort_kind == SettingManager.get(SettingManager.get(SettingManager.SORT_KIND)):
             return
 
