@@ -1188,7 +1188,7 @@ class VimFilerMarkCommand(sublime_plugin.TextCommand):
 
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
         if self.ADD_MARK == option:
-            # ad or delete mark current directory and file.
+            # add or delete mark current directory and file.
             self.add_or_delete_mark(ViewManager().get_abs_path(row))
         else:
             MarkDictManager.clear_mark()
