@@ -13,6 +13,12 @@
 	<array>
 		<dict>
 			<key>match</key>
+			<string>^.*\*.*$</string>
+			<key>name</key>
+			<string>keyword.text.vimfiler</string>
+		</dict>
+		<dict>
+			<key>match</key>
 			<string>^.*/.*$</string>
 			<key>name</key>
 			<string>string.text.vimfiler</string>
