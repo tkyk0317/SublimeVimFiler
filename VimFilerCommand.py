@@ -98,6 +98,11 @@ class SettingManager:
     CHM_COMMAND = "chm"
     HIDE_OWNER = "hide_owner"
     HIDE_PERMISSION = "hide_permission"
+    SORT_KIND = "sort_kind"
+    SORT_DIR = "dir"
+    SORT_TIME = "time"
+    SORT_NAME = "name"
+    SORT_REVERSE = "srt_reverse"
 
     @staticmethod
     def init():
@@ -124,6 +129,10 @@ class SettingManager:
             SettingManager.settings.get(SettingManager.HIDE_OWNER, True)
         SettingManager.option[SettingManager.HIDE_PERMISSION] = \
             SettingManager.settings.get(SettingManager.HIDE_PERMISSION, True)
+        SettingManager.option[SettingManager.SORT_KIND] = \
+            SettingManager.settings.get(SettingManager.SORT_KIND, SettingManager.SORT_DIR)
+        SettingManager.option[SettingManager.SORT_REVERSE] = \
+            SettingManager.settings.get(SettingManager.SORT_REVERSE, False)
 
     @staticmethod
     def get(key):
@@ -326,8 +335,29 @@ class FileSystemManager:
         return cmp(key1, key2)
 
     @staticmethod
-    def sort_dir_dict(dir_dict):
-        return sorted(dir_dict.items(), cmp=FileSystemManager.comp, key=lambda x: x[0])
+    def sort(dir_dict):
+        if SettingManager.SORT_TIME == SettingManager.get(SettingManager.SORT_KIND):
+            return FileSystemManager.sort_update_time(dir_dict)
+        elif SettingManager.SORT_NAME == SettingManager.get(SettingManager.SORT_KIND):
+            return FileSystemManager.sort_name(dir_dict)
+        else:
+            return FileSystemManager.sort_dir(dir_dict)
+
+    @staticmethod
+    def sort_dir(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), reverse=r, cmp=FileSystemManager.comp, key=lambda x: x[0])
+
+    @staticmethod
+    def sort_name(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), reverse=r)
+
+    @staticmethod
+    def sort_update_time(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), cmp=lambda x, y: cmp(x[UPDATE_TIME_INDEX], y[UPDATE_TIME_INDEX]),
+                      reverse=r, key=lambda x: x[1])
 
 
 class WriteResult:
@@ -339,7 +369,7 @@ class WriteResult:
         view.erase(edit, sublime.Region(0, view.size()))
 
         # write result.
-        sort_dict = FileSystemManager.sort_dir_dict(dir_dict)
+        sort_dict = FileSystemManager.sort(dir_dict)
         end_name = sort_dict[len(dir_dict) - 1][0]
         [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in sort_dict]
 
@@ -442,7 +472,7 @@ class ViewManager:
     def __init__(self, view):
         cur_dir = FileSystemManager.get_cur_dir()
         dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
-        self.dir_list = FileSystemManager.sort_dir_dict(dir_dict)
+        self.dir_list = FileSystemManager.sort(dir_dict)
         # read all view string.
         #view.substr(sublime.Region(0, view.size())).split("\n")
 
@@ -975,3 +1005,39 @@ class VimFilerNoActionCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         pass
+
+
+class VimFilerSortCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit, **args):
+        # check current sort kind.
+        sort_kind = args[SettingManager.SORT_KIND]
+        if sort_kind == SettingManager.get(SettingManager.get(SettingManager.SORT_KIND)):
+            return
+
+        # sort by specified sort kind.
+        if True == self.is_valid_sort_kind(sort_kind):
+            # refresh view.
+            SettingManager.set(SettingManager.SORT_KIND, sort_kind)
+            WriteResult.update_result(self.view, edit)
+
+    def is_valid_sort_kind(self, sort_kind):
+        is_valid = False
+        if SettingManager.SORT_NAME == sort_kind:
+            is_valid = True
+        elif SettingManager.SORT_TIME == sort_kind:
+            is_valid = True
+        elif SettingManager.SORT_DIR == sort_kind:
+            is_valid = True
+        return is_valid
+
+
+class VimFilerSortReverseCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # set sort kind.
+        sort_reverse = not(SettingManager.get(SettingManager.SORT_REVERSE))
+        SettingManager.set(SettingManager.SORT_REVERSE, sort_reverse)
+
+        # refresh view.
+        WriteResult.update_result(self.view, edit)
