@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>name</key>
+	<string>vimfiler_grep_file_result</string>
+	<key>fileTypes</key>
+	<array>
+		<string>grepfile</string>
+	</array>
+	<key>patterns</key>
+	<array>
+	</array>
+	<key>uuid</key>
+	<string>aba7b337-1376-4d8a-8ff8-16bd7b15de4a</string>
+	<key>scopeName</key>
+	<string>text.grepfile</string>
+</dict>
+</plist>

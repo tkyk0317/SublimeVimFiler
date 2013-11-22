@@ -20,6 +20,7 @@ sys.setdefaultencoding('utf-8')
 # global variables.
 UTF8 = "utf-8"
 DOT = "."
+CANMA = ","
 SPACE_CHAR = " "
 ENTER_CHAR = "\n"
 PREV_DIR = ".."
@@ -28,15 +29,19 @@ HOME_ENV = "HOME"
 DELIMITER_DIR = os.sep
 UPDATE_TIME_DELIMITER = ","
 UPDATE_TIME_FORMAT = "%y-%m-%d %H:%M:%S"
-UPDATE_TIME_LEN = 17
 MARGIN = 6
 PERMISSION_SPACE = 2
 BUFFER_NAME = "dir.vimfiler"
+GREP_PATH_BUFFER_NAME = "result.grepfile"
 SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFiler.tmLanguage"
+GREP_PATH_SYNTAX_FILE = "Packages/SublimeVimFiler/SublimeVimFilerGrepPathResult.tmLanguage"
 SETTINGS_FILE = "SublimeVimFiler.sublime-settings"
-OWNER_INDEX = 0
-PERMISIION_INDEX = 1
-UPDATE_TIME_INDEX = 2
+MARK_SYMBLOL = "*"
+NOT_MARK_SYMBOL = SPACE_CHAR
+MARK_INDEX = 0
+OWNER_INDEX = 1
+PERMISIION_INDEX = 2
+UPDATE_TIME_INDEX = 3
 READ_BIT = 4
 WRITE_BIT = 2
 EXECUTE_BIT = 1
@@ -85,6 +90,17 @@ class MimeTypeManager:
         return mime_type
 
 
+class CursorManager:
+
+    @staticmethod
+    def move_bof(view):
+        view.run_command("move_to", {"to": "bof"})
+
+    @staticmethod
+    def move_line(view, line):
+        view.run_command("goto_line", {"line": line})
+
+
 class SettingManager:
 
     option = {}
@@ -98,6 +114,12 @@ class SettingManager:
     CHM_COMMAND = "chm"
     HIDE_OWNER = "hide_owner"
     HIDE_PERMISSION = "hide_permission"
+    IGNORE_DIR = "ignore_dir"
+    SORT_KIND = "sort_kind"
+    SORT_DIR = "dir"
+    SORT_TIME = "time"
+    SORT_NAME = "name"
+    SORT_REVERSE = "srt_reverse"
 
     @staticmethod
     def init():
@@ -124,6 +146,12 @@ class SettingManager:
             SettingManager.settings.get(SettingManager.HIDE_OWNER, True)
         SettingManager.option[SettingManager.HIDE_PERMISSION] = \
             SettingManager.settings.get(SettingManager.HIDE_PERMISSION, True)
+        SettingManager.option[SettingManager.IGNORE_DIR] = \
+            SettingManager.settings.get(SettingManager.IGNORE_DIR, [])
+        SettingManager.option[SettingManager.SORT_KIND] = \
+            SettingManager.settings.get(SettingManager.SORT_KIND, SettingManager.SORT_DIR)
+        SettingManager.option[SettingManager.SORT_REVERSE] = \
+            SettingManager.settings.get(SettingManager.SORT_REVERSE, False)
 
     @staticmethod
     def get(key):
@@ -168,6 +196,17 @@ class Utility:
         os.rmdir(path)
 
     @staticmethod
+    def copy(src_path, dst_path):
+        if True == FileSystemManager.is_file(src_path):
+            shutil.copy2(src_path, dst_path)
+        elif True == FileSystemManager.is_dir(src_path):
+            if False == FileSystemManager.is_exist(dst_path):
+                # copy tree.
+                shutil.copytree(src_path, dst_path, True)
+            else:
+                Utility.rcopy_file(src_path, dst_path)
+
+    @staticmethod
     def rcopy_file(src_path, dst_path):
         # create root directory.
         dst_root = src_path.rstrip(DELIMITER_DIR)
@@ -190,6 +229,41 @@ class Utility:
                 copy_src = os.path.join(src_root, file)
                 copy_dst = os.path.join(dst, file)
                 shutil.copy2(copy_src, copy_dst)
+
+    @staticmethod
+    def sort(dir_dict):
+        if SettingManager.SORT_TIME == SettingManager.get(SettingManager.SORT_KIND):
+            return Utility.sort_update_time(dir_dict)
+        elif SettingManager.SORT_NAME == SettingManager.get(SettingManager.SORT_KIND):
+            return Utility.sort_name(dir_dict)
+        else:
+            return Utility.sort_dir(dir_dict)
+
+    @staticmethod
+    def sort_dir(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), reverse=r, cmp=Utility.comp, key=lambda x: x[0])
+
+    @staticmethod
+    def sort_name(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), reverse=r)
+
+    @staticmethod
+    def sort_update_time(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), cmp=lambda x, y: cmp(x[UPDATE_TIME_INDEX], y[UPDATE_TIME_INDEX]),
+                      reverse=r, key=lambda x: x[1])
+
+    @staticmethod
+    def comp(key1, key2):
+        if (DELIMITER_DIR in key1) and not(DELIMITER_DIR in key2):
+            # keep.
+            return -1
+        if not(DELIMITER_DIR in key1) and (DELIMITER_DIR in key2):
+            # replace.
+            return 1
+        return cmp(key1, key2)
 
 
 class FileSystemManager:
@@ -234,10 +308,14 @@ class FileSystemManager:
 
     @staticmethod
     def __get_dir_info(abs_path):
+        if True == FileSystemManager.is_dir(abs_path):
+            mark = MARK_SYMBLOL if MarkDictManager.is_exist(abs_path + DELIMITER_DIR) else NOT_MARK_SYMBOL
+        else:
+            mark = MARK_SYMBLOL if MarkDictManager.is_exist(abs_path) else NOT_MARK_SYMBOL
         owner = FileSystemManager.__get_owner(abs_path)
         permission = FileSystemManager.__get_per_info(abs_path)
         update_time = FileSystemManager.__get_update_time(abs_path)
-        return [owner, permission, update_time]
+        return [mark, owner, permission, update_time]
 
     @staticmethod
     def __get_owner(abs_path):
@@ -315,19 +393,36 @@ class FileSystemManager:
     def get_owner(path):
         return pwd.getpwuid(os.stat(path)[stat.ST_UID])[0]
 
-    @staticmethod
-    def comp(key1, key2):
-        if (DELIMITER_DIR in key1) and not(DELIMITER_DIR in key2):
-            # keep.
-            return -1
-        if not(DELIMITER_DIR in key1) and (DELIMITER_DIR in key2):
-            # replace.
-            return 1
-        return cmp(key1, key2)
+
+class MarkDictManager:
+
+    mark_dict = {}
 
     @staticmethod
-    def sort_dir_dict(dir_dict):
-        return sorted(dir_dict.items(), cmp=FileSystemManager.comp, key=lambda x: x[0])
+    def is_exist_mark():
+        if 0 != len(MarkDictManager.mark_dict):
+            return True
+        return False
+
+    @staticmethod
+    def get_mark_list():
+        return MarkDictManager.mark_dict.keys()
+
+    @staticmethod
+    def add_mark(mark_path):
+        MarkDictManager.mark_dict.setdefault(mark_path, "")
+
+    @staticmethod
+    def del_mark(mark_path):
+        MarkDictManager.mark_dict.pop(mark_path)
+
+    @staticmethod
+    def clear_mark():
+        MarkDictManager.mark_dict.clear()
+
+    @staticmethod
+    def is_exist(abs_path):
+        return abs_path in MarkDictManager.mark_dict
 
 
 class WriteResult:
@@ -339,15 +434,16 @@ class WriteResult:
         view.erase(edit, sublime.Region(0, view.size()))
 
         # write result.
-        sort_dict = FileSystemManager.sort_dir_dict(dir_dict)
+        sort_dict = Utility.sort(dir_dict)
         end_name = sort_dict[len(dir_dict) - 1][0]
         [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in sort_dict]
 
-        # cursor move to BOF.
-        view.run_command("move_to", {"to": "bof"})
+        # active view and cursor move to BOF.
+        CursorManager.move_bof(view)
 
     @staticmethod
     def __write(view, edit, width, dir_name, info, end_dir_name):
+        mark = info[MARK_INDEX]
         owner = info[OWNER_INDEX]
         per = info[PERMISIION_INDEX]
         update_time = info[UPDATE_TIME_INDEX]
@@ -357,7 +453,8 @@ class WriteResult:
 
         # create insert string.
         space_num = WriteResult.__get_space_num(width, [write_dir, owner, per, update_time])
-        w_str = write_dir + (space_num * SPACE_CHAR) + owner + (SPACE_CHAR) + per + (SPACE_CHAR) + update_time
+        w_str = mark + write_dir + (space_num * SPACE_CHAR) + owner + (SPACE_CHAR) + \
+            per + (SPACE_CHAR) + update_time
 
         # write string.
         if dir_name != end_dir_name:
@@ -392,13 +489,19 @@ class VimFilerCommand(sublime_plugin.TextCommand):
 
     cur_dir_list = []
     cur_path = ""
+    DIR_KEY = "dir"
 
-    def run(self, edit):
+    def run(self, edit, **args):
         # load settings file.
         SettingManager.init()
 
+        # get current directory.
+        if self.DIR_KEY in args:
+            self.cur_path = args.get(self.DIR_KEY, self.get_current_dir())
+        else:
+            self.cur_path = self.get_current_dir()
+
         # get current dir list.
-        self.cur_path = self.get_current_dir()
         FileSystemManager.set_cur_dir(self.cur_path)
 
         # get current directory list.
@@ -410,10 +513,29 @@ class VimFilerCommand(sublime_plugin.TextCommand):
     def show_result(self, dir_list, edit):
         output_file = self.get_output_file()
 
-        # show result.
+        # show result and focus.
         WriteResult.write(output_file, edit, dir_list)
+        self.view.window().focus_view(output_file)
 
     def get_output_file(self):
+        if True == self.is_aleready_buffer():
+            return self.get_already_buffer()
+        else:
+            return self.create_buffer()
+
+    def is_aleready_buffer(self):
+        for v in self.view.window().views():
+            if v.name() == BUFFER_NAME:
+                return True
+        return False
+
+    def get_already_buffer(self):
+        for v in self.view.window().views():
+            if v.name() == BUFFER_NAME:
+                return v
+        return None
+
+    def create_buffer(self):
         output_file = self.view.window().new_file()
         output_file.set_syntax_file(SYNTAX_FILE)
         output_file.set_name(BUFFER_NAME)
@@ -439,12 +561,10 @@ class VimFilerCommand(sublime_plugin.TextCommand):
 
 class ViewManager:
 
-    def __init__(self, view):
+    def __init__(self):
         cur_dir = FileSystemManager.get_cur_dir()
         dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
-        self.dir_list = FileSystemManager.sort_dir_dict(dir_dict)
-        # read all view string.
-        #view.substr(sublime.Region(0, view.size())).split("\n")
+        self.dir_list = Utility.sort(dir_dict)
 
     def get_line_dir(self, index):
         # get directoty name.
@@ -453,13 +573,17 @@ class ViewManager:
     def get_abs_path(self, index):
         return FileSystemManager.get_abs_path(self.get_line_dir(index))
 
+    def get_view_line(self, view, index):
+        # read all view string.
+        return view.substr(sublime.Region(0, view.size())).split("\n")[index]
+
 
 class VimFilerOpenDirCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         # get path of current line.
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        path = ViewManager(self.view).get_abs_path(row)
+        path = ViewManager().get_abs_path(row)
 
         # write directory list.
         if FileSystemManager.is_dir(path):
@@ -499,7 +623,7 @@ class VimFilerOpenFileCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        path = ViewManager(self.view).get_abs_path(row)
+        path = ViewManager().get_abs_path(row)
 
         # check file.
         if FileSystemManager.is_file(path):
@@ -539,7 +663,7 @@ class VimFilerRenameCommand(sublime_plugin.TextCommand):
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
 
         # show output panel.
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+        self.src_path = ViewManager().get_abs_path(row)
         self.show_rename_panel(self.src_path)
 
     def show_rename_panel(self, path):
@@ -565,12 +689,45 @@ class VimFilerDeleteCommand(sublime_plugin.TextCommand):
     ERR_MSG = u'Not Exist Deleted Path'
 
     def run(self, edit):
+        # check exist mark list.
         self.edit = edit
-        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        if True == self.is_exist_mark_path():
+            self.show_mark_list()
+        else:
+            (row, col) = self.view.rowcol(self.view.sel()[0].begin())
 
-        # show output panel.
-        path = ViewManager(self.view).get_abs_path(row)
-        self.show_rename_panel(path)
+            # show output panel.
+            path = ViewManager().get_abs_path(row)
+            self.show_rename_panel(path)
+
+    def is_exist_mark_path(self):
+        return MarkDictManager.is_exist_mark()
+
+    def show_mark_list(self):
+        w = self.view.window()
+        w.show_input_panel(self.CAPTION, self.get_mark_list_string(), self.delete_mark_list, None, None)
+
+    def get_mark_list_string(self):
+        string = ""
+        mark_list = MarkDictManager.get_mark_list()
+        for fname in mark_list:
+            if fname != mark_list[len(mark_list) - 1]:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1] + CANMA + SPACE_CHAR
+            else:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1]
+        return string
+
+    def delete_mark_list(self, delete_msg):
+        try:
+            # delete mark list.
+            [self.delete(path) for path in MarkDictManager.get_mark_list()]
+            sublime.status_message(self.COMP_MSG)
+            WriteResult.update_result(self.view, self.edit)
+
+            # clear mark.
+            MarkDictManager.clear_mark()
+        except:
+            sublime.message_dialog(self.ERR_MSG)
 
     def show_rename_panel(self, path):
         window = self.view.window()
@@ -668,10 +825,10 @@ class VimFilerMoveCommand(sublime_plugin.TextCommand):
     ERR_MOVE_MSG = u'Not Exist Src File or Dst is not Directory'
 
     def run(self, edit):
-        # get specified file/directory.
+        # get specified file and directory.
         self.edit = edit
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+        self.src_path = ViewManager().get_abs_path(row)
 
         # create move message.
         msg = self.create_message(self.src_path)
@@ -857,25 +1014,64 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
     CAPTION = u'Copy File/Directory'
     COMP_MSG = u'Copy File/Directory Complete'
     ERR_MSG = u'Copy Error(Not Exist Path)'
+    COPY_PROCESS_MSG = u'Copy Processing...............'
 
     def run(self, edit):
-        # get specified file/directory.
         self.edit = edit
-        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
-        self.src_path = ViewManager(self.view).get_abs_path(row)
+        # check exist mark list.
+        if True == self.is_exist_mark_path():
+            self.show_mark_list()
+        else:
+            # get specified file and directory.
+            (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+            self.src_path = ViewManager().get_abs_path(row)
 
-        # create copy message.
-        msg = self.create_message(self.src_path)
+            # show output panel.
+            msg = self.create_message(self.src_path)
+            self.show_panel(msg)
 
-        # show output panel.
-        self.show_panel(msg)
+    def is_exist_mark_path(self):
+        return MarkDictManager.is_exist_mark()
+
+    def show_mark_list(self):
+        w = self.view.window()
+        w.show_input_panel(self.CAPTION,  self.get_mark_list_string(), self.copy_mark_list, None, None)
+
+    def get_mark_list_string(self):
+        string = ""
+        mark_list = MarkDictManager.get_mark_list()
+        for fname in mark_list:
+            if fname != mark_list[len(mark_list) - 1]:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1] + CANMA + SPACE_CHAR
+            else:
+                string = string + os.path.split(fname.rstrip(DELIMITER_DIR))[1] + self.ARROW
+        return string + FileSystemManager.get_cur_dir()
+
+    def copy_mark_list(self, copy_msg):
+        # check ARROW string.
+        if False == (self.ARROW in copy_msg):
+            return
+
+        try:
+            sublime.status_message(self.COPY_PROCESS_MSG)
+
+            # copy mark list.
+            cur_path = FileSystemManager.get_cur_dir()
+            [Utility.copy(src, cur_path) for src in MarkDictManager.get_mark_list()]
+            sublime.status_message(self.COMP_MSG)
+            WriteResult.update_result(self.view, self.edit)
+
+            # clear mark.
+            MarkDictManager.clear_mark()
+        except:
+            sublime.message_dialog(self.ERR_MSG)
 
     def create_message(self, src_path):
         return src_path + self.ARROW + src_path
 
     def show_panel(self, path):
-        window = self.view.window()
-        window.show_input_panel(self.CAPTION, path, self.on_done, None, None)
+        w = self.view.window()
+        w.show_input_panel(self.CAPTION, path, self.on_done, None, None)
 
     def on_done(self, copy_msg):
         # check ARROW string.
@@ -891,23 +1087,15 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
         dst_path = copy_msg.split(self.ARROW_SUFFIX)[1]
         dst_path = self.get_dst_path(dst_path)
 
-        # copy.
         try:
-            self.copy(dst_path)
+            sublime.status_message(self.COPY_PROCESS_MSG)
+
+            # copy.
+            Utility.copy(self.src_path, dst_path)
             WriteResult.update_result(self.view, self.edit)
             sublime.status_message(self.COMP_MSG)
         except:
             sublime.message_dialog(self.ERR_MSG)
-
-    def copy(self, dst_path):
-        if True == FileSystemManager.is_file(self.src_path):
-            shutil.copy2(self.src_path, dst_path)
-        elif True == FileSystemManager.is_dir(self.src_path):
-            if False == FileSystemManager.is_exist(dst_path):
-                # copy tree.
-                shutil.copytree(self.src_path, dst_path, True)
-            else:
-                Utility.rcopy_file(self.src_path, dst_path)
 
     def get_dst_path(self, dst_path):
         # check src_path equal dst path.
@@ -920,12 +1108,12 @@ class VimFilerCopyCommand(sublime_plugin.TextCommand):
         return dst_path
 
 
-class VimFilerGrepCommand(sublime_plugin.TextCommand):
+class VimFilerGrepPathCommand(sublime_plugin.TextCommand):
 
     INVALID_INDEX = -1
     DEFAULT_PATTERN = u'.*'
-    CAPTION = u'Grep File'
-    COMP_MSG = u'Grep File Complete'
+    CAPTION = u'Grep Directory/File'
+    COMP_MSG = u'Grep Directory/File Complete'
     GREP_PROCESS_MSG = u'Grep Process...............'
 
     def run(self, edit):
@@ -946,20 +1134,54 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
         sublime.set_timeout(lambda: sublime.status_message(self.GREP_PROCESS_MSG), 50)
         self.search_list = self.get_search_list(pattern)
 
-        # show grep result in quick panel.
+        # show grep result.
+        output_file = self.output_result(self.search_list)
+        sublime.set_timeout(CursorManager.move_bof(output_file), 50)
         sublime.set_timeout(lambda: sublime.status_message(self.COMP_MSG), 50)
-        sublime.set_timeout(lambda: self.view.window().show_quick_panel(self.search_list, self.on_selected_done), 50)
 
     def get_search_list(self, pattern):
         search_list = []
         # recursive search.
         for root, dirs, files in os.walk(FileSystemManager.get_cur_dir()):
-            for f in files:
-                f_path = os.path.join(root, f)
-                # check pattern matching.
-                if None != re.search(pattern, f_path, re.IGNORECASE):
-                    search_list.append(f_path)
+            # search directory.
+            for dname in dirs:
+                self.add_match_pattern_path(search_list, root, dname, pattern)
+            # search file.
+            for fname in files:
+                self.add_match_pattern_path(search_list, root, fname, pattern)
         return search_list
+
+    def add_match_pattern_path(self, search_list, root, path, pattern):
+        abs_path = os.path.join(root, path)
+        # check ignore directory.
+        if False == self.is_ignore_dir(abs_path):
+            # check pattern.
+            if None != re.search(pattern, abs_path, re.IGNORECASE):
+                if True == FileSystemManager.is_dir(abs_path):
+                    abs_path = abs_path + DELIMITER_DIR
+                search_list.append(abs_path)
+
+    def is_ignore_dir(self, dname):
+        # search ignore directory.
+        for ignore_dir in SettingManager.get(SettingManager.IGNORE_DIR):
+            if ignore_dir in dname:
+                return True
+        return False
+
+    def output_result(self, search_list):
+        output_file = self.view.window().new_file()
+        output_file.set_name(GREP_PATH_BUFFER_NAME)
+        output_file.set_syntax_file(GREP_PATH_SYNTAX_FILE)
+        output_file.set_scratch(True)
+
+        # create write string.
+        result = ""
+        for path in search_list:
+            result = result + path + ENTER_CHAR
+        # write result.
+        sublime.set_timeout(output_file.insert(output_file.begin_edit(), output_file.size(), result), 200)
+        #sublime.set_timeout(lambda: self.view.window().show_quick_panel(search_list, self.on_selected_done), 50)
+        return output_file
 
     def on_selected_done(self, index):
         if self.INVALID_INDEX == index:
@@ -971,7 +1193,99 @@ class VimFilerGrepCommand(sublime_plugin.TextCommand):
             self.view.window().open_file(find_path)
 
 
+class VimFilerOpenGrepResultCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # get current line.
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        cur_path = ViewManager().get_view_line(self.view, row)
+
+        # open file or directory.
+        if True == FileSystemManager.is_file(cur_path):
+            self.view.window().open_file(cur_path)
+        elif True == FileSystemManager.is_dir(cur_path):
+            self.view.run_command("vim_filer", {VimFilerCommand.DIR_KEY: cur_path})
+
+
 class VimFilerNoActionCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         pass
+
+
+class VimFilerSortCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit, **args):
+        # check current sort kind.
+        sort_kind = args.get(SettingManager.SORT_KIND, "")
+        if sort_kind == SettingManager.get(SettingManager.get(SettingManager.SORT_KIND)):
+            return
+
+        # sort by specified sort kind.
+        if True == self.is_valid_sort_kind(sort_kind):
+            # refresh view.
+            SettingManager.set(SettingManager.SORT_KIND, sort_kind)
+            WriteResult.update_result(self.view, edit)
+
+    def is_valid_sort_kind(self, sort_kind):
+        is_valid = False
+        if SettingManager.SORT_NAME == sort_kind:
+            is_valid = True
+        elif SettingManager.SORT_TIME == sort_kind:
+            is_valid = True
+        elif SettingManager.SORT_DIR == sort_kind:
+            is_valid = True
+        return is_valid
+
+
+class VimFilerSortReverseCommand(sublime_plugin.TextCommand):
+
+    def run(self, edit):
+        # set sort kind.
+        sort_reverse = not(SettingManager.get(SettingManager.SORT_REVERSE))
+        SettingManager.set(SettingManager.SORT_REVERSE, sort_reverse)
+
+        # refresh view.
+        WriteResult.update_result(self.view, edit)
+
+
+class VimFilerMarkCommand(sublime_plugin.TextCommand):
+
+    ARG_KEY = "option"
+    ADD_MARK = "add"
+    CLEAR_MARK = "clear"
+    ARG_LIST = [ADD_MARK, CLEAR_MARK]
+    ADD_MSG = "Add Mark: "
+    DEL_MSG = "Delete Mark: "
+    CLEAR_MSG = "Clear Added All Mark"
+
+    def run(self, edit, **args):
+        # check enable argment.
+        option = args.get(self.ARG_KEY, "")
+        if False == self.is_valid_arg(option):
+            return
+
+        (row, col) = self.view.rowcol(self.view.sel()[0].begin())
+        if self.ADD_MARK == option:
+            # add or delete mark current directory and file.
+            self.add_or_delete_mark(ViewManager().get_abs_path(row))
+        else:
+            MarkDictManager.clear_mark()
+            sublime.status_message(self.CLEAR_MSG)
+        # reresh.
+        WriteResult.update_result(self.view, edit)
+
+        # move current line.
+        CursorManager.move_line(self.view, row + 1)
+
+    def add_or_delete_mark(self, mark_path):
+        # add or mark path.
+        if True == MarkDictManager.is_exist(mark_path):
+            MarkDictManager.del_mark(mark_path)
+            sublime.status_message(self.DEL_MSG + mark_path)
+        else:
+            MarkDictManager.add_mark(mark_path)
+            sublime.status_message(self.ADD_MSG + mark_path)
+
+    def is_valid_arg(self, kind):
+        return kind in self.ARG_LIST
