@@ -225,6 +225,41 @@ class Utility:
                 copy_dst = os.path.join(dst, file)
                 shutil.copy2(copy_src, copy_dst)
 
+    @staticmethod
+    def sort(dir_dict):
+        if SettingManager.SORT_TIME == SettingManager.get(SettingManager.SORT_KIND):
+            return Utility.sort_update_time(dir_dict)
+        elif SettingManager.SORT_NAME == SettingManager.get(SettingManager.SORT_KIND):
+            return Utility.sort_name(dir_dict)
+        else:
+            return Utility.sort_dir(dir_dict)
+
+    @staticmethod
+    def sort_dir(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), reverse=r, cmp=Utility.comp, key=lambda x: x[0])
+
+    @staticmethod
+    def sort_name(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), reverse=r)
+
+    @staticmethod
+    def sort_update_time(dir_dict):
+        r = SettingManager.get(SettingManager.SORT_REVERSE)
+        return sorted(dir_dict.items(), cmp=lambda x, y: cmp(x[UPDATE_TIME_INDEX], y[UPDATE_TIME_INDEX]),
+                      reverse=r, key=lambda x: x[1])
+
+    @staticmethod
+    def comp(key1, key2):
+        if (DELIMITER_DIR in key1) and not(DELIMITER_DIR in key2):
+            # keep.
+            return -1
+        if not(DELIMITER_DIR in key1) and (DELIMITER_DIR in key2):
+            # replace.
+            return 1
+        return cmp(key1, key2)
+
 
 class FileSystemManager:
 
@@ -353,41 +388,6 @@ class FileSystemManager:
     def get_owner(path):
         return pwd.getpwuid(os.stat(path)[stat.ST_UID])[0]
 
-    @staticmethod
-    def comp(key1, key2):
-        if (DELIMITER_DIR in key1) and not(DELIMITER_DIR in key2):
-            # keep.
-            return -1
-        if not(DELIMITER_DIR in key1) and (DELIMITER_DIR in key2):
-            # replace.
-            return 1
-        return cmp(key1, key2)
-
-    @staticmethod
-    def sort(dir_dict):
-        if SettingManager.SORT_TIME == SettingManager.get(SettingManager.SORT_KIND):
-            return FileSystemManager.sort_update_time(dir_dict)
-        elif SettingManager.SORT_NAME == SettingManager.get(SettingManager.SORT_KIND):
-            return FileSystemManager.sort_name(dir_dict)
-        else:
-            return FileSystemManager.sort_dir(dir_dict)
-
-    @staticmethod
-    def sort_dir(dir_dict):
-        r = SettingManager.get(SettingManager.SORT_REVERSE)
-        return sorted(dir_dict.items(), reverse=r, cmp=FileSystemManager.comp, key=lambda x: x[0])
-
-    @staticmethod
-    def sort_name(dir_dict):
-        r = SettingManager.get(SettingManager.SORT_REVERSE)
-        return sorted(dir_dict.items(), reverse=r)
-
-    @staticmethod
-    def sort_update_time(dir_dict):
-        r = SettingManager.get(SettingManager.SORT_REVERSE)
-        return sorted(dir_dict.items(), cmp=lambda x, y: cmp(x[UPDATE_TIME_INDEX], y[UPDATE_TIME_INDEX]),
-                      reverse=r, key=lambda x: x[1])
-
 
 class MarkDictManager:
 
@@ -429,7 +429,7 @@ class WriteResult:
         view.erase(edit, sublime.Region(0, view.size()))
 
         # write result.
-        sort_dict = FileSystemManager.sort(dir_dict)
+        sort_dict = Utility.sort(dir_dict)
         end_name = sort_dict[len(dir_dict) - 1][0]
         [WriteResult.__write(view, edit, w, k, v, end_name) for k, v in sort_dict]
 
@@ -534,7 +534,7 @@ class ViewManager:
     def __init__(self):
         cur_dir = FileSystemManager.get_cur_dir()
         dir_dict = FileSystemManager.get_current_dir_list(cur_dir)
-        self.dir_list = FileSystemManager.sort(dir_dict)
+        self.dir_list = Utility.sort(dir_dict)
         # read all view string.
         #view.substr(sublime.Region(0, view.size())).split("\n")
 
@@ -1188,16 +1188,8 @@ class VimFilerMarkCommand(sublime_plugin.TextCommand):
 
         (row, col) = self.view.rowcol(self.view.sel()[0].begin())
         if self.ADD_MARK == option:
-            # mark current directory and file.
-            cur_path = ViewManager().get_abs_path(row)
-
-            # add mark path.
-            if True == MarkDictManager.is_exist(cur_path):
-                MarkDictManager.del_mark(cur_path)
-                sublime.status_message(self.DEL_MSG + cur_path)
-            else:
-                MarkDictManager.add_mark(cur_path)
-                sublime.status_message(self.ADD_MSG + cur_path)
+            # ad or delete mark current directory and file.
+            self.add_or_delete_mark(ViewManager().get_abs_path(row))
         else:
             MarkDictManager.clear_mark()
             sublime.status_message(self.CLEAR_MSG)
@@ -1206,6 +1198,15 @@ class VimFilerMarkCommand(sublime_plugin.TextCommand):
 
         # move current line.
         CursorManager.move_line(self.view, row + 1)
+
+    def add_or_delete_mark(self, mark_path):
+        # add or mark path.
+        if True == MarkDictManager.is_exist(mark_path):
+            MarkDictManager.del_mark(mark_path)
+            sublime.status_message(self.DEL_MSG + mark_path)
+        else:
+            MarkDictManager.add_mark(mark_path)
+            sublime.status_message(self.ADD_MSG + mark_path)
 
     def is_valid_arg(self, kind):
         return kind in self.ARG_LIST
